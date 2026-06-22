@@ -26,7 +26,7 @@
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <PackageProjectUrl>https://github.com/MikeSchulze/gdUnit4Net</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/hrodiwulfaz/gdUnit4Net</PackageProjectUrl>
     <PackageId>gdUnit4.api</PackageId>
     <PackageVersion>$(GdUnitAPIVersion)</PackageVersion>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
@@ -35,7 +35,7 @@
     <PackageIcon>icon.png</PackageIcon>
     <PackageTags>Godot;Test;Testing;UnitTest;GdUnit4;Utility;Utilities</PackageTags>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/MikeSchulze/gdUnit4Net</RepositoryUrl>
+    <RepositoryUrl>https://github.com/hrodiwulfaz/gdUnit4Net</RepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>

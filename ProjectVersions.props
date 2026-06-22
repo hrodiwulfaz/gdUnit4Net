@@ -2,14 +2,14 @@
   <!-- GdUnit4 Component Versions -->
   <PropertyGroup>
     <GdUnitAnalyzersVersion>1.0.0</GdUnitAnalyzersVersion>
-    <GdUnitAPIVersion>5.0.0</GdUnitAPIVersion>
-    <GdUnitTestAdapterVersion>3.0.0</GdUnitTestAdapterVersion>
+    <GdUnitAPIVersion>5.0.0-outpostia.1</GdUnitAPIVersion>
+    <GdUnitTestAdapterVersion>3.0.0-outpostia.1</GdUnitTestAdapterVersion>
   </PropertyGroup>
 
   <!-- Godot Configuration -->
   <PropertyGroup>
     <!-- Note: Keep GodotVersion in sync with global.json msbuild-sdks.Godot.NET.Sdk -->
-    <GodotVersion>4.4</GodotVersion>
+    <GodotVersion>4.6.0-outpostia</GodotVersion>
     <GodotNetSdkVersion>$(GodotVersion)</GodotNetSdkVersion>
   </PropertyGroup>
 
