@@ -123,7 +123,7 @@ internal static class GodotObjectExtensions
     internal static async Task<object?> Invoke(object instance, string methodName, params Variant[] args)
     {
         // if the instance has a GDScript attached, we have to use the Godot `Call` method
-        if (instance is GodotObject goi && goi.GetScript().UnboxVariant() is GDScript)
+        if (instance is GodotObject goi && IsGdScript(goi.GetScript()))
         {
             if (!goi.HasMethod(methodName))
                 throw new MissingMethodException($"The method '{methodName}' not exist on this instance.");
@@ -168,6 +168,11 @@ internal static class GodotObjectExtensions
 
         return result;
     }
+
+    private static bool IsGdScript(Variant script)
+        => script.VariantType == Variant.Type.Object
+           && script.Obj is GodotObject godotObject
+           && godotObject.GetClass().Equals("GDScript", StringComparison.Ordinal);
 
     private static bool VariantEquals([NotNullWhen(true)] this IEnumerable? left, IEnumerable? right, Mode compareMode)
     {

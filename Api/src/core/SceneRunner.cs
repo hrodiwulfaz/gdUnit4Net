@@ -460,7 +460,7 @@ internal sealed class SceneRunner : ISceneRunner
 
     private string SceneName()
     {
-        if (currentScene.GetScript().Obj is not GDScript sceneScript)
+        if (currentScene.GetScript().Obj is not Resource sceneScript || !sceneScript.GetClass().Equals("GDScript", StringComparison.Ordinal))
             return currentScene.Name.ToString();
         return sceneScript.ResourceName.GetBaseName();
     }
