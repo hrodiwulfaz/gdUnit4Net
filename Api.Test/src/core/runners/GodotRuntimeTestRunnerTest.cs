@@ -98,7 +98,7 @@ public class GodotRuntimeTestRunnerTest
     }
 
     [TestCase]
-    public void BuildGodotArgumentsIncludesPipeName()
+    public void BuildGodotArgumentsIncludesPipeNameAndLogFile()
     {
         var settings = new TestEngineSettings
         {
@@ -106,15 +106,31 @@ public class GodotRuntimeTestRunnerTest
             Parameters = "\"--minimized\""
         };
         var runner = CreateTestRunner(1000, settings);
+        var runtimeLogFile = Path.Combine(TestTempDirectory!, "runtime.log");
 
-        var arguments = runner.BuildGodotArguments();
+        var arguments = runner.BuildGodotArguments(runtimeLogFile);
 
         AssertThat(arguments).Contains("--path");
         AssertThat(arguments).Contains("-s");
         AssertThat(arguments).Contains("res://gdunit4_testadapter_v5/GdUnit4TestRunnerScene.cs");
         AssertThat(arguments).Contains("--pipe-name");
         AssertThat(arguments).Contains(runner.PipeName);
+        AssertThat(arguments).Contains("--log-file");
+        AssertThat(arguments).Contains(runtimeLogFile);
+        AssertThat(arguments).Contains("--gdunit-log-file");
         AssertThat(arguments).Contains("\"--minimized\"");
+    }
+
+    [TestCase]
+    public void BuildCompileGodotArgumentsIncludesLogFile()
+    {
+        var compileLogFile = Path.Combine(TestTempDirectory!, "compile.log");
+
+        var arguments = GodotRuntimeTestRunner.BuildCompileGodotArguments(TestTempDirectory!, compileLogFile);
+
+        AssertThat(arguments).Contains("--path");
+        AssertThat(arguments).Contains("--log-file");
+        AssertThat(arguments).Contains(compileLogFile);
     }
 
     /// <summary>

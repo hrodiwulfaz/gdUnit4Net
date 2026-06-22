@@ -33,6 +33,8 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
     /// </summary>
     internal const string TEMP_TEST_RUNNER_DIR = "gdunit4_testadapter_v5";
 
+    private const string DEFAULT_LOG_FILE_ROOT = "tmp/gdunit-runs";
+
     private readonly TestEngineSettings settings;
     private Process? process;
 
@@ -119,16 +121,26 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
     {
         lock (ProcessLock)
         {
+            var workingDirectory = Environment.CurrentDirectory;
+            var compileLogFilePath = settings.UseUniqueLogFiles
+                ? ResolveRunnerLogFilePath(workingDirectory, "compile.log")
+                : null;
+            var runtimeLogFilePath = settings.UseUniqueLogFiles
+                ? ResolveRunnerLogFilePath(workingDirectory, "runtime.log")
+                : null;
+
+            LogRunnerConfiguration(compileLogFilePath, runtimeLogFilePath);
+
             var godotBinary = GodotBin;
-            if (!InstallTestRunnerClasses(Environment.CurrentDirectory))
+            if (!InstallTestRunnerClasses(workingDirectory))
                 return;
 
-            if (!ReCompileGodotProject(Environment.CurrentDirectory, godotBinary))
+            if (!ReCompileGodotProject(workingDirectory, godotBinary, compileLogFilePath))
                 return;
             Logger.LogInfo("======== Running GdUnit4 Godot Runtime Test Runner ========");
 
             var processStartInfo =
-                new ProcessStartInfo(godotBinary, BuildGodotArguments())
+                new ProcessStartInfo(godotBinary, BuildGodotArguments(runtimeLogFilePath))
                 {
                     StandardOutputEncoding = Encoding.Default,
                     RedirectStandardOutput = true,
@@ -137,7 +149,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     WindowStyle = ProcessWindowStyle.Hidden,
-                    WorkingDirectory = Environment.CurrentDirectory
+                    WorkingDirectory = workingDirectory
                 };
 
             if (DebuggerFramework.IsDebugProcess)
@@ -208,13 +220,13 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         return isSuccess;
     }
 
-    internal bool ReCompileGodotProject(string workingDirectory, string godotBinary)
+    internal bool ReCompileGodotProject(string workingDirectory, string godotBinary, string? logFilePath = null)
     {
         using var compileProcess = new Process();
         try
         {
             // recompile the project
-            var processStartInfo = new ProcessStartInfo($"{godotBinary}", @"--path . -e --headless --quit-after 1000 --verbose")
+            var processStartInfo = new ProcessStartInfo($"{godotBinary}", BuildCompileGodotArguments(workingDirectory, logFilePath))
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -304,13 +316,32 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         }
     }
 
-    internal string BuildGodotArguments()
+    internal string BuildGodotArguments(string? logFilePath = null)
     {
         var arguments = new StringBuilder($"--path . -d -s res://{TEMP_TEST_RUNNER_DIR}/GdUnit4TestRunnerScene.cs");
         if (!string.IsNullOrWhiteSpace(settings.Parameters))
             _ = arguments.Append(' ').Append(settings.Parameters);
 
         _ = arguments.Append(" --pipe-name ").Append(QuoteArgument(PipeName));
+
+        // Godot consumes --log-file for engine logging, while the generated gdUnit runner reads
+        // --gdunit-log-file because engine arguments are not guaranteed to remain in OS.GetCmdlineArgs().
+        AppendLogFileArgument(arguments, logFilePath);
+        AppendGdUnitLogFileArgument(arguments, logFilePath);
+        return arguments.ToString();
+    }
+
+    internal string ResolveRunnerLogFilePath(string workingDirectory, string fileName)
+    {
+        var runnerDirectory = Path.Combine(ResolveArtifactRootPath(workingDirectory), RunnerId);
+        _ = Directory.CreateDirectory(runnerDirectory);
+        return Path.GetFullPath(Path.Combine(runnerDirectory, fileName));
+    }
+
+    internal static string BuildCompileGodotArguments(string _, string? logFilePath = null)
+    {
+        var arguments = new StringBuilder("--path . -e --headless --quit-after 1000 --verbose");
+        AppendLogFileArgument(arguments, logFilePath);
         return arguments.ToString();
     }
 
@@ -340,8 +371,41 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         return string.IsNullOrWhiteSpace(result) ? "unknown-assembly" : result;
     }
 
+    private static void AppendLogFileArgument(StringBuilder arguments, string? logFilePath)
+    {
+        if (!string.IsNullOrWhiteSpace(logFilePath))
+            _ = arguments.Append(" --log-file ").Append(QuoteArgument(logFilePath));
+    }
+
+    private static void AppendGdUnitLogFileArgument(StringBuilder arguments, string? logFilePath)
+    {
+        if (!string.IsNullOrWhiteSpace(logFilePath))
+            _ = arguments.Append(" --gdunit-log-file ").Append(QuoteArgument(logFilePath));
+    }
+
     private static string QuoteArgument(string value)
         => $"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+
+    private string ResolveArtifactRootPath(string workingDirectory)
+    {
+        var logFileRoot = string.IsNullOrWhiteSpace(settings.LogFileRoot)
+            ? DEFAULT_LOG_FILE_ROOT
+            : settings.LogFileRoot;
+        var rootPath = Path.IsPathRooted(logFileRoot)
+            ? logFileRoot
+            : Path.Combine(workingDirectory, logFileRoot);
+        return Path.GetFullPath(rootPath);
+    }
+
+    private void LogRunnerConfiguration(string? compileLogFilePath, string? runtimeLogFilePath)
+    {
+        Logger.LogInfo($"GdUnit4 runtime runner id: {RunnerId}");
+        Logger.LogInfo($"GdUnit4 runtime pipe name: {PipeName}");
+        if (!string.IsNullOrWhiteSpace(compileLogFilePath))
+            Logger.LogInfo($"GdUnit4 compile log file: {compileLogFilePath}");
+        if (!string.IsNullOrWhiteSpace(runtimeLogFilePath))
+            Logger.LogInfo($"GdUnit4 runtime log file: {runtimeLogFilePath}");
+    }
 
     private bool RunDotnetRestore(string workingDirectory)
     {

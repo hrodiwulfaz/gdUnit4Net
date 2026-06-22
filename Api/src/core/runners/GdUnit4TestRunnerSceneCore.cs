@@ -39,10 +39,14 @@ public partial class GdUnit4TestRunnerSceneCore : SceneTree
     private sealed partial class TestRunner : Node
     {
         private const string PIPE_NAME_ARGUMENT = "--pipe-name";
+        private const string LOG_FILE_ARGUMENT = "--log-file";
+        private const string GDUNIT_LOG_FILE_ARGUMENT = "--gdunit-log-file";
+        private const string GODOT_LOG_PATH_SETTING = "debug/file_logging/log_path";
 
         public TestRunner()
         {
             Logger = new GodotLogger();
+            ApplyResolvedLogFilePath();
             Server = new GodotGdUnit4RestServer(Logger, ResolvePipeName());
         }
 
@@ -67,6 +71,13 @@ public partial class GdUnit4TestRunnerSceneCore : SceneTree
                 throw new InvalidOperationException("Missing required '--pipe-name' argument.");
 
             return pipeName;
+        }
+
+        private static void ApplyResolvedLogFilePath()
+        {
+            var logFilePath = ResolveOptionalArgument(LOG_FILE_ARGUMENT) ?? ResolveOptionalArgument(GDUNIT_LOG_FILE_ARGUMENT);
+            if (!string.IsNullOrWhiteSpace(logFilePath))
+                ProjectSettings.SetSetting(GODOT_LOG_PATH_SETTING, logFilePath);
         }
 
         private static string? ResolveOptionalArgument(string argumentName)

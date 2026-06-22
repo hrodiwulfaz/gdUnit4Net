@@ -69,4 +69,14 @@ public sealed class TestEngineSettings
     ///     Set to a higher value for projects that require more compilation time.
     /// </remarks>
     public int CompileProcessTimeout { get; init; } = 20000;
+
+    /// <summary>
+    ///     Gets a value indicating whether Godot compile and runtime processes write to per-runner log files.
+    /// </summary>
+    public bool UseUniqueLogFiles { get; init; } = true;
+
+    /// <summary>
+    ///     Gets the root directory used for per-runner runtime artifacts when unique log files are enabled.
+    /// </summary>
+    public string LogFileRoot { get; init; } = "tmp/gdunit-runs";
 }
