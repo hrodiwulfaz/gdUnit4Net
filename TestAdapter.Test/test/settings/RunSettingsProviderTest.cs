@@ -1,8 +1,12 @@
 namespace GdUnit4.TestAdapter.Test.Settings;
 
 using System.Collections.Generic;
+using System.Xml;
 
+using Microsoft.VisualStudio.TestPlatform.ObjectModel.Adapter;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+using Moq;
 
 using TestAdapter.Settings;
 
@@ -43,6 +47,21 @@ public class RunSettingsProviderTest
         </RunSettings>
         """;
 
+    private const string GDUNIT_SETTINGS =
+        """
+        <GdUnit4>
+            <Parameters>"--minimized"</Parameters>
+            <DisplayName>FullyQualifiedName</DisplayName>
+            <CaptureStdOut>true</CaptureStdOut>
+            <CompileProcessTimeout>60000</CompileProcessTimeout>
+            <UseUniqueLogFiles>true</UseUniqueLogFiles>
+            <LogFileRoot>tmp/gdunit-runs-custom</LogFileRoot>
+            <UseUniqueUserDataDir>true</UseUniqueUserDataDir>
+            <RunnerSceneDirectory>Data/Testing/Generated/GdUnit4</RunnerSceneDirectory>
+            <GodotProjectPath>D:\Projects\Outpostia</GodotProjectPath>
+        </GdUnit4>
+        """;
+
     private const string XML_SETTINGS =
         """
         <?xml version="1.0" encoding="utf-8"?>
@@ -62,6 +81,34 @@ public class RunSettingsProviderTest
             </RunConfiguration>
         </RunSettings>
         """;
+
+    [TestMethod]
+    public void LoadSettingsReadsUniqueRuntimeSettings()
+    {
+        var provider = new GdUnit4SettingsProvider();
+        using var stringReader = new StringReader(GDUNIT_SETTINGS);
+        using var xmlReader = XmlReader.Create(stringReader);
+        provider.Load(xmlReader);
+
+        var runSettings = new Mock<IRunSettings>();
+        _ = runSettings
+            .Setup(settings => settings.GetSettings(GdUnit4Settings.RUN_SETTINGS_XML_NODE))
+            .Returns(provider);
+        var discoveryContext = new Mock<IDiscoveryContext>();
+        _ = discoveryContext.SetupGet(context => context.RunSettings).Returns(runSettings.Object);
+
+        var settings = GdUnit4SettingsProvider.LoadSettings(discoveryContext.Object);
+
+        Assert.AreEqual("\"--minimized\"", settings.Parameters);
+        Assert.AreEqual(DisplayNameOptions.FullyQualifiedName, settings.DisplayName);
+        Assert.IsTrue(settings.CaptureStdOut);
+        Assert.AreEqual(60000, settings.CompileProcessTimeout);
+        Assert.IsTrue(settings.UseUniqueLogFiles);
+        Assert.AreEqual("tmp/gdunit-runs-custom", settings.LogFileRoot);
+        Assert.IsTrue(settings.UseUniqueUserDataDir);
+        Assert.AreEqual("Data/Testing/Generated/GdUnit4", settings.RunnerSceneDirectory);
+        Assert.AreEqual("D:\\Projects\\Outpostia", settings.GodotProjectPath);
+    }
 
     [TestMethod]
     public void GetEnvironmentVariables()

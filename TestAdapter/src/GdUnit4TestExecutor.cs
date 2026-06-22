@@ -3,6 +3,7 @@
 
 namespace GdUnit4.TestAdapter;
 
+using System.Diagnostics.CodeAnalysis;
 using System.Xml;
 
 using Api;
@@ -108,7 +109,12 @@ public class GdUnit4TestExecutor : ITestExecutor2, IDisposable
             SessionTimeout = (int)(runConfiguration.TestSessionTimeout == 0
                 ? DEFAULT_SESSION_TIMEOUT
                 : runConfiguration.TestSessionTimeout),
-            CompileProcessTimeout = settings.CompileProcessTimeout
+            CompileProcessTimeout = settings.CompileProcessTimeout,
+            UseUniqueLogFiles = settings.UseUniqueLogFiles,
+            LogFileRoot = settings.LogFileRoot,
+            UseUniqueUserDataDir = settings.UseUniqueUserDataDir,
+            RunnerSceneDirectory = settings.RunnerSceneDirectory,
+            GodotProjectPath = settings.GodotProjectPath ?? string.Empty
         };
 
         testEngine = ITestEngine.GetInstance(engineSettings, Log);
@@ -257,9 +263,11 @@ public class GdUnit4TestExecutor : ITestExecutor2, IDisposable
     /// </summary>
     /// <param name="testCases">Collection of VSTest TestCase objects to convert.</param>
     /// <returns>List of test assembly nodes organized in GdUnit4's hierarchical test structure.</returns>
-    private static List<TestAssemblyNode> ToGdUnitTestNodes(IEnumerable<TestCase> testCases) =>
-
-        // Group test cases by assembly path
+    [SuppressMessage(
+        "StyleCop.CSharp.OrderingRules",
+        "SA1202:Elements should be ordered by access",
+        Justification = "Kept near related private execution helpers while exposing it for focused adapter tests.")]
+    internal static List<TestAssemblyNode> ToGdUnitTestNodes(IEnumerable<TestCase> testCases) =>
         [
             .. testCases
                 .GroupBy(tc => tc.Source)
@@ -276,19 +284,21 @@ public class GdUnit4TestExecutor : ITestExecutor2, IDisposable
 
                     // Group test cases by managed type (suites)
                     var suites = assemblyGroup
-                        .GroupBy(t => t.CodeFilePath)
+                        .GroupBy(t => t.GetPropertyValue(TestCaseExtensions.ManagedTypeProperty, string.Empty))
                         .Select(tests =>
                         {
-                            var t = tests.First();
+                            var representativeTest = tests
+                                .OrderBy(test => test.CodeFilePath ?? string.Empty, StringComparer.Ordinal)
+                                .ThenBy(test => test.LineNumber)
+                                .First();
 
-                            var managedType = t.GetPropertyValue(TestCaseExtensions.ManagedTypeProperty, string.Empty);
                             var suite = new TestSuiteNode
                             {
                                 Id = Guid.NewGuid(),
                                 ParentId = assembly.Id,
-                                ManagedType = managedType,
+                                ManagedType = tests.Key,
                                 AssemblyPath = assembly.AssemblyPath,
-                                SourceFile = t.CodeFilePath ?? "Unknown",
+                                SourceFile = representativeTest.CodeFilePath ?? "Unknown",
                                 Tests = []
                             };
 

@@ -38,6 +38,11 @@ public enum DisplayNameOptions
 ///     &lt;CaptureStdOut&gt;true&lt;/CaptureStdOut&gt;
 ///     &lt;Parameters&gt;--verbose --headless&lt;/Parameters&gt;
 ///     &lt;CompileProcessTimeout&gt;30000&lt;/CompileProcessTimeout&gt;
+///     &lt;UseUniqueLogFiles&gt;true&lt;/UseUniqueLogFiles&gt;
+///     &lt;LogFileRoot&gt;tmp/gdunit-runs&lt;/LogFileRoot&gt;
+///     &lt;UseUniqueUserDataDir&gt;false&lt;/UseUniqueUserDataDir&gt;
+///     &lt;RunnerSceneDirectory&gt;Data/Testing/Generated/GdUnit4&lt;/RunnerSceneDirectory&gt;
+///     &lt;GodotProjectPath&gt;D:\Projects\MyGame&lt;/GodotProjectPath&gt;
 ///   &lt;/GdUnit4&gt;
 /// &lt;/RunSettings&gt;
 /// </code>
@@ -130,6 +135,32 @@ public class GdUnit4Settings : TestRunSettings
     /// </code>
     /// </example>
     public int CompileProcessTimeout { get; init; } = 20000;
+
+    /// <summary>
+    ///     Gets a value indicating whether Godot compile and runtime processes write to per-runner log files.
+    /// </summary>
+    public bool UseUniqueLogFiles { get; init; } = true;
+
+    /// <summary>
+    ///     Gets the root directory used for per-runner runtime artifacts when unique log files are enabled.
+    /// </summary>
+    public string LogFileRoot { get; init; } = "tmp/gdunit-runs";
+
+    /// <summary>
+    ///     Gets a value indicating whether each runner should use its own Godot user data directory.
+    /// </summary>
+    public bool UseUniqueUserDataDir { get; init; } = true;
+
+    /// <summary>
+    ///     Gets the project-relative directory where the generated Godot runtime runner scene is written.
+    /// </summary>
+    public string RunnerSceneDirectory { get; init; } = "gdunit4_testadapter_v5";
+
+    /// <summary>
+    ///     Gets the optional Godot project path. The value can point to a directory containing project.godot or to project.godot itself.
+    ///     Relative values are resolved from the test assembly directory because VSTest exposes runsettings XML but not the runsettings file path to adapters.
+    /// </summary>
+    public string? GodotProjectPath { get; init; }
 
     /// <summary>
     ///     Converts the current settings instance to an XML element for inclusion in .runsettings files.
