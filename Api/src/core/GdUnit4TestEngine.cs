@@ -24,6 +24,7 @@ using Runners;
     Justification = "Project root resolution helpers are kept near their execution flow.")]
 internal sealed class GdUnit4TestEngine : ITestEngine
 {
+    private readonly object activeTestRunnersLock = new();
     private readonly object taskLock = new();
     private CancellationTokenSource? cancellationSource;
 
@@ -45,7 +46,7 @@ internal sealed class GdUnit4TestEngine : ITestEngine
     {
         lock (taskLock)
             cancellationSource?.Cancel();
-        foreach (var activeTestRunner in ActiveTestRunners)
+        foreach (var activeTestRunner in ActiveTestRunnerSnapshot())
             activeTestRunner.Cancel();
     }
 
@@ -203,6 +204,10 @@ internal sealed class GdUnit4TestEngine : ITestEngine
             },
             cancellationToken);
 
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "Runners are disposed in the finally blocks after they are untracked from cancellation.")]
     private void ExecuteEngineTests(
         string assemblyPath,
         List<TestSuiteNode> directExecutorTestSuites,
@@ -218,18 +223,46 @@ internal sealed class GdUnit4TestEngine : ITestEngine
             var resolvedGodotProjectRoot = godotProjectRoot
                                            ?? throw new InvalidOperationException("Godot runtime tests require a resolved Godot project root.");
             var godotRunner = new GodotRuntimeTestRunner(Logger, debuggerFramework, Settings, assemblyPath, resolvedGodotProjectRoot);
-            ActiveTestRunners.Add(godotRunner);
-            godotRunner.RunAndWait(godotExecutorTestSuites, eventListener, cancellationToken);
-            _ = ActiveTestRunners.Remove(godotRunner);
+            TrackActiveTestRunner(godotRunner);
+            try
+            {
+                godotRunner.RunAndWait(godotExecutorTestSuites, eventListener, cancellationToken);
+            }
+            finally
+            {
+                UntrackActiveTestRunner(godotRunner);
+                DisposeTestRunner(godotRunner);
+            }
         }
 
         // Run tests that don't require Godot runtime
         if (directExecutorTestSuites.Count > 0)
         {
             var directRunner = new DefaultTestRunner(Logger, Settings);
-            ActiveTestRunners.Add(directRunner);
-            directRunner.RunAndWait(directExecutorTestSuites, eventListener, cancellationToken);
-            _ = ActiveTestRunners.Remove(directRunner);
+            TrackActiveTestRunner(directRunner);
+            try
+            {
+                directRunner.RunAndWait(directExecutorTestSuites, eventListener, cancellationToken);
+            }
+            finally
+            {
+                UntrackActiveTestRunner(directRunner);
+                DisposeTestRunner(directRunner);
+            }
+        }
+    }
+
+    private void DisposeTestRunner(ITestRunner testRunner)
+    {
+        try
+        {
+            testRunner.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+#pragma warning disable CA1031
+        catch (Exception ex)
+#pragma warning restore CA1031
+        {
+            Logger.LogError($"Error disposing test runner: {ex.Message}");
         }
     }
 
@@ -261,6 +294,24 @@ internal sealed class GdUnit4TestEngine : ITestEngine
         var message = $"Unable to locate a Godot project root for '{assemblyPath}'. Set <GodotProjectPath> in the GdUnit4 runsettings to a directory containing project.godot or to project.godot itself.";
         Logger.LogError(message);
         throw new FileNotFoundException(message);
+    }
+
+    internal void TrackActiveTestRunner(ITestRunner activeTestRunner)
+    {
+        lock (activeTestRunnersLock)
+            ActiveTestRunners.Add(activeTestRunner);
+    }
+
+    internal void UntrackActiveTestRunner(ITestRunner activeTestRunner)
+    {
+        lock (activeTestRunnersLock)
+            _ = ActiveTestRunners.Remove(activeTestRunner);
+    }
+
+    private ITestRunner[] ActiveTestRunnerSnapshot()
+    {
+        lock (activeTestRunnersLock)
+            return [.. ActiveTestRunners];
     }
 
     private string ResolveConfiguredGodotProjectRoot(string assemblyPath, string configuredPath)

@@ -81,6 +81,11 @@ public sealed class TestEngineSettings
     public string LogFileRoot { get; init; } = "tmp/gdunit-runs";
 
     /// <summary>
+    ///     Gets a value indicating whether Godot compile and runtime processes use a per-runner user data directory.
+    /// </summary>
+    public bool UseUniqueUserDataDir { get; init; } = true;
+
+    /// <summary>
     ///     Gets the project-relative directory where the generated Godot runtime runner scene is written.
     /// </summary>
     public string RunnerSceneDirectory { get; init; } = "gdunit4_testadapter_v5";

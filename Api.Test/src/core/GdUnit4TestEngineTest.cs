@@ -4,6 +4,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 using Api;
 
@@ -158,6 +160,24 @@ public sealed class GdUnit4TestEngineTest
             .StartsWithMessage($"Configured <GodotProjectPath> '{missingProjectPath}' does not resolve to a Godot project.");
     }
 
+    [TestCase]
+    public void ActiveRunnerTrackingSupportsConcurrentAddRemoveAndCancel()
+    {
+        var engine = CreateEngine();
+        var activeRunners = Enumerable.Range(0, 100).Select(_ => new CancelRecordingRunner()).ToArray();
+        var removedRunners = Enumerable.Range(0, 100).Select(_ => new CancelRecordingRunner()).ToArray();
+
+        Parallel.ForEach(activeRunners.Concat(removedRunners), engine.TrackActiveTestRunner);
+        Parallel.ForEach(removedRunners, engine.UntrackActiveTestRunner);
+
+        engine.Cancel();
+
+        foreach (var activeRunner in activeRunners)
+            AssertThat(activeRunner.CancelCount).IsEqual(1);
+        foreach (var removedRunner in removedRunners)
+            AssertThat(removedRunner.CancelCount).IsEqual(0);
+    }
+
     private GdUnit4TestEngine CreateEngine(TestEngineSettings? settings = null)
         => new(settings ?? new TestEngineSettings(), Logger);
 
@@ -178,6 +198,23 @@ public sealed class GdUnit4TestEngineTest
         Directory.CreateDirectory(Path.GetDirectoryName(assemblyPath)!);
         File.WriteAllText(assemblyPath, string.Empty);
         return assemblyPath;
+    }
+
+    private sealed class CancelRecordingRunner : ITestRunner
+    {
+        private int cancelCount;
+
+        public int CancelCount => cancelCount;
+
+        public void RunAndWait(List<TestSuiteNode> testSuiteNodes, ITestEventListener eventListener, CancellationToken cancellationToken)
+        {
+        }
+
+        public void Cancel()
+            => Interlocked.Increment(ref cancelCount);
+
+        public ValueTask DisposeAsync()
+            => ValueTask.CompletedTask;
     }
 
     private sealed class TestLogger : ITestEngineLogger

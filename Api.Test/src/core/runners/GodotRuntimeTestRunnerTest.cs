@@ -108,8 +108,9 @@ public class GodotRuntimeTestRunnerTest
         };
         var runner = CreateTestRunner(1000, settings);
         var runtimeLogFile = Path.Combine(TestTempDirectory!, "runtime.log");
+        var userDataDir = Path.Combine(TestTempDirectory!, "user-data");
 
-        var arguments = runner.BuildGodotArguments(TestTempDirectory!, runtimeLogFile);
+        var arguments = runner.BuildGodotArguments(runtimeLogFile, userDataDir);
 
         AssertThat(arguments).Contains("--path");
         AssertThat(arguments).Contains(Path.GetFullPath(TestTempDirectory!));
@@ -120,6 +121,8 @@ public class GodotRuntimeTestRunnerTest
         AssertThat(arguments).Contains("--log-file");
         AssertThat(arguments).Contains(runtimeLogFile);
         AssertThat(arguments).Contains("--gdunit-log-file");
+        AssertThat(arguments).Contains("--user-data-dir");
+        AssertThat(arguments).Contains(userDataDir);
         AssertThat(arguments).Contains("\"--minimized\"");
     }
 
@@ -127,13 +130,16 @@ public class GodotRuntimeTestRunnerTest
     public void BuildCompileGodotArgumentsIncludesProjectRootAndLogFile()
     {
         var compileLogFile = Path.Combine(TestTempDirectory!, "compile.log");
+        var userDataDir = Path.Combine(TestTempDirectory!, "user-data");
 
-        var arguments = GodotRuntimeTestRunner.BuildCompileGodotArguments(TestTempDirectory!, compileLogFile);
+        var arguments = GodotRuntimeTestRunner.BuildCompileGodotArguments(TestTempDirectory!, compileLogFile, userDataDir);
 
         AssertThat(arguments).Contains("--path");
         AssertThat(arguments).Contains(Path.GetFullPath(TestTempDirectory!));
         AssertThat(arguments).Contains("--log-file");
         AssertThat(arguments).Contains(compileLogFile);
+        AssertThat(arguments).Contains("--user-data-dir");
+        AssertThat(arguments).Contains(userDataDir);
     }
 
     [TestCase]

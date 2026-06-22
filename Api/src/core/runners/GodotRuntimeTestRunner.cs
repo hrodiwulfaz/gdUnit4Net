@@ -141,19 +141,29 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
             var runtimeLogFilePath = settings.UseUniqueLogFiles
                 ? ResolveRunnerLogFilePath(workingDirectory, "runtime.log")
                 : null;
+            var userDataDir = settings.UseUniqueUserDataDir
+                ? ResolveRunnerUserDataDir(workingDirectory)
+                : null;
 
-            LogRunnerConfiguration(compileLogFilePath, runtimeLogFilePath);
+            LogRunnerConfiguration(compileLogFilePath, runtimeLogFilePath, userDataDir);
 
             var godotBinary = GodotBin;
-            if (!InstallTestRunnerClasses(workingDirectory))
-                return;
+            using (var setupLock = AcquireProjectSetupLock(workingDirectory, cancellationToken))
+            {
+                if (setupLock == null)
+                    return;
 
-            if (!ReCompileGodotProject(workingDirectory, godotBinary, compileLogFilePath))
-                return;
+                if (!InstallTestRunnerClasses(workingDirectory))
+                    return;
+
+                if (!ReCompileGodotProject(workingDirectory, godotBinary, compileLogFilePath, userDataDir))
+                    return;
+            }
+
             Logger.LogInfo("======== Running GdUnit4 Godot Runtime Test Runner ========");
 
             var processStartInfo =
-                new ProcessStartInfo(godotBinary, BuildGodotArguments(workingDirectory, runtimeLogFilePath))
+                new ProcessStartInfo(godotBinary, BuildGodotArguments(runtimeLogFilePath, userDataDir))
                 {
                     StandardOutputEncoding = Encoding.Default,
                     RedirectStandardOutput = true,
@@ -228,13 +238,13 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         return isSuccess;
     }
 
-    internal bool ReCompileGodotProject(string workingDirectory, string godotBinary, string? logFilePath = null)
+    internal bool ReCompileGodotProject(string workingDirectory, string godotBinary, string? logFilePath = null, string? userDataDir = null)
     {
         using var compileProcess = new Process();
         try
         {
             // recompile the project
-            var processStartInfo = new ProcessStartInfo($"{godotBinary}", BuildCompileGodotArguments(workingDirectory, logFilePath))
+            var processStartInfo = new ProcessStartInfo($"{godotBinary}", BuildCompileGodotArguments(workingDirectory, logFilePath, userDataDir))
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -324,9 +334,9 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         }
     }
 
-    internal string BuildGodotArguments(string godotProjectRoot, string? logFilePath = null)
+    internal string BuildGodotArguments(string? logFilePath = null, string? userDataDir = null)
     {
-        var arguments = new StringBuilder($"--path {QuoteArgument(Path.GetFullPath(godotProjectRoot))} -d -s {QuoteArgument(BuildRunnerSceneResourcePath())}");
+        var arguments = new StringBuilder($"--path {QuoteArgument(GodotProjectRoot)} -d -s {QuoteArgument(BuildRunnerSceneResourcePath())}");
         if (!string.IsNullOrWhiteSpace(settings.Parameters))
             _ = arguments.Append(' ').Append(settings.Parameters);
 
@@ -336,6 +346,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         // --gdunit-log-file because engine arguments are not guaranteed to remain in OS.GetCmdlineArgs().
         AppendLogFileArgument(arguments, logFilePath);
         AppendGdUnitLogFileArgument(arguments, logFilePath);
+        AppendUserDataDirArgument(arguments, userDataDir);
         return arguments.ToString();
     }
 
@@ -346,10 +357,18 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         return Path.GetFullPath(Path.Combine(runnerDirectory, fileName));
     }
 
-    internal static string BuildCompileGodotArguments(string godotProjectRoot, string? logFilePath = null)
+    internal string ResolveRunnerUserDataDir(string workingDirectory)
+    {
+        var userDataDirectory = Path.Combine(ResolveArtifactRootPath(workingDirectory), RunnerId, "user-data");
+        _ = Directory.CreateDirectory(userDataDirectory);
+        return Path.GetFullPath(userDataDirectory);
+    }
+
+    internal static string BuildCompileGodotArguments(string godotProjectRoot, string? logFilePath = null, string? userDataDir = null)
     {
         var arguments = new StringBuilder($"--path {QuoteArgument(Path.GetFullPath(godotProjectRoot))} -e --headless --quit-after 1000 --verbose");
         AppendLogFileArgument(arguments, logFilePath);
+        AppendUserDataDirArgument(arguments, userDataDir);
         return arguments.ToString();
     }
 
@@ -433,6 +452,12 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
             _ = arguments.Append(" --gdunit-log-file ").Append(QuoteArgument(logFilePath));
     }
 
+    private static void AppendUserDataDirArgument(StringBuilder arguments, string? userDataDir)
+    {
+        if (!string.IsNullOrWhiteSpace(userDataDir))
+            _ = arguments.Append(" --user-data-dir ").Append(QuoteArgument(userDataDir));
+    }
+
     private static string QuoteArgument(string value)
         => $"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
 
@@ -456,7 +481,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         return Path.GetFullPath(rootPath);
     }
 
-    private void LogRunnerConfiguration(string? compileLogFilePath, string? runtimeLogFilePath)
+    private void LogRunnerConfiguration(string? compileLogFilePath, string? runtimeLogFilePath, string? userDataDir)
     {
         Logger.LogInfo($"GdUnit4 runtime runner id: {RunnerId}");
         Logger.LogInfo($"GdUnit4 runtime pipe name: {PipeName}");
@@ -464,6 +489,42 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
             Logger.LogInfo($"GdUnit4 compile log file: {compileLogFilePath}");
         if (!string.IsNullOrWhiteSpace(runtimeLogFilePath))
             Logger.LogInfo($"GdUnit4 runtime log file: {runtimeLogFilePath}");
+        if (!string.IsNullOrWhiteSpace(userDataDir))
+            Logger.LogInfo($"GdUnit4 user data directory: {userDataDir}");
+    }
+
+    private FileStream? AcquireProjectSetupLock(string workingDirectory, CancellationToken cancellationToken)
+    {
+        var lockDirectory = ResolveArtifactRootPath(workingDirectory);
+        _ = Directory.CreateDirectory(lockDirectory);
+        var lockPath = Path.Combine(lockDirectory, "gdunit4-setup.lock");
+        var timeout = TimeSpan.FromMilliseconds(Math.Max(settings.SessionTimeout, 600000));
+        var stopwatch = Stopwatch.StartNew();
+        Logger.LogInfo($"Waiting for GdUnit4 project setup lock: {lockPath}");
+
+        while (!cancellationToken.IsCancellationRequested && stopwatch.Elapsed < timeout)
+        {
+            try
+            {
+                var lockStream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                Logger.LogInfo($"Acquired GdUnit4 project setup lock: {lockPath}");
+                return lockStream;
+            }
+            catch (IOException)
+            {
+                Thread.Sleep(250);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Thread.Sleep(250);
+            }
+        }
+
+        if (cancellationToken.IsCancellationRequested)
+            Logger.LogWarning($"Canceled while waiting for GdUnit4 project setup lock: {lockPath}");
+        else
+            Logger.LogError($"Timed out waiting for GdUnit4 project setup lock: {lockPath}");
+        return null;
     }
 
     private bool RunDotnetRestore(string workingDirectory)
