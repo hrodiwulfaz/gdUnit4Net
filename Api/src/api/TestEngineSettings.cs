@@ -84,4 +84,9 @@ public sealed class TestEngineSettings
     ///     Gets the project-relative directory where the generated Godot runtime runner scene is written.
     /// </summary>
     public string RunnerSceneDirectory { get; init; } = "gdunit4_testadapter_v5";
+
+    /// <summary>
+    ///     Gets the Godot project root or project.godot path used when runtime tests run outside the project directory.
+    /// </summary>
+    public string GodotProjectPath { get; init; } = string.Empty;
 }

@@ -4,6 +4,7 @@
 namespace GdUnit4.Core;
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 using Api;
 
@@ -13,6 +14,14 @@ using Extensions;
 
 using Runners;
 
+[SuppressMessage(
+    "StyleCop.CSharp.OrderingRules",
+    "SA1202:Elements should be ordered by access",
+    Justification = "Project root resolution helpers are kept near their execution flow.")]
+[SuppressMessage(
+    "StyleCop.CSharp.OrderingRules",
+    "SA1204:Static elements should appear before instance elements",
+    Justification = "Project root resolution helpers are kept near their execution flow.")]
 internal sealed class GdUnit4TestEngine : ITestEngine
 {
     private readonly object taskLock = new();
@@ -63,10 +72,16 @@ internal sealed class GdUnit4TestEngine : ITestEngine
             {
                 semaphore.Wait(cancellationSource.Token);
 
-                var task = ExecuteTestsInAssembly(assemblyNode, eventListener, debuggerFramework, cancellationSource.Token)
-
-                    // ReSharper disable once AccessToDisposedClosure
-                    .ContinueWith(_ => semaphore.Release(), cancellationSource.Token, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                var task = ExecuteTestsInAssembly(
+                        assemblyNode,
+                        eventListener,
+                        debuggerFramework,
+                        cancellationSource.Token)
+                    .ContinueWith(
+                        _ => semaphore.Release(),
+                        cancellationSource.Token,
+                        TaskContinuationOptions.ExecuteSynchronously,
+                        TaskScheduler.Default);
                 tasks.Add(task);
             }
 
@@ -167,11 +182,22 @@ internal sealed class GdUnit4TestEngine : ITestEngine
             {
                 Logger.LogInfo($"Starting tests for assembly: {testAssemblyNode.AssemblyPath}");
 
-                var projectWorkingDir = LookupProjectPath(testAssemblyNode.AssemblyPath);
-                Directory.SetCurrentDirectory(projectWorkingDir);
-                Logger.LogInfo($"Set current working directory to: {projectWorkingDir}");
+                var (directExecutorTestSuites, godotExecutorTestSuites) = SplitTestSuitesByRequiredRuntime(testAssemblyNode.Suites);
+                string? godotProjectRoot = null;
+                if (godotExecutorTestSuites.Count > 0)
+                {
+                    godotProjectRoot = LookupGodotProjectRoot(testAssemblyNode.AssemblyPath);
+                    Logger.LogInfo($"Using Godot project root for runtime execution: {godotProjectRoot}");
+                }
 
-                ExecuteEngineTests(testAssemblyNode.AssemblyPath, testAssemblyNode.Suites, eventListener, debuggerFramework, cancellationToken);
+                ExecuteEngineTests(
+                    testAssemblyNode.AssemblyPath,
+                    directExecutorTestSuites,
+                    godotExecutorTestSuites,
+                    godotProjectRoot,
+                    eventListener,
+                    debuggerFramework,
+                    cancellationToken);
 
                 Logger.LogInfo($"Completed tests for assembly: {testAssemblyNode.AssemblyPath}");
             },
@@ -179,17 +205,19 @@ internal sealed class GdUnit4TestEngine : ITestEngine
 
     private void ExecuteEngineTests(
         string assemblyPath,
-        List<TestSuiteNode> testSuiteNodes,
+        List<TestSuiteNode> directExecutorTestSuites,
+        List<TestSuiteNode> godotExecutorTestSuites,
+        string? godotProjectRoot,
         ITestEventListener eventListener,
         IDebuggerFramework debuggerFramework,
         CancellationToken cancellationToken)
     {
-        var (directExecutorTestSuites, godotExecutorTestSuites) = SplitTestSuitesByRequiredRuntime(testSuiteNodes);
-
         // Run tests that require Godot runtime
         if (godotExecutorTestSuites.Count > 0)
         {
-            var godotRunner = new GodotRuntimeTestRunner(Logger, debuggerFramework, Settings, assemblyPath);
+            var resolvedGodotProjectRoot = godotProjectRoot
+                                           ?? throw new InvalidOperationException("Godot runtime tests require a resolved Godot project root.");
+            var godotRunner = new GodotRuntimeTestRunner(Logger, debuggerFramework, Settings, assemblyPath, resolvedGodotProjectRoot);
             ActiveTestRunners.Add(godotRunner);
             godotRunner.RunAndWait(godotExecutorTestSuites, eventListener, cancellationToken);
             _ = ActiveTestRunners.Remove(godotRunner);
@@ -205,25 +233,100 @@ internal sealed class GdUnit4TestEngine : ITestEngine
         }
     }
 
-    private string LookupProjectPath(string assemblyPath)
+    internal string LookupGodotProjectRoot(string assemblyPath)
     {
-        try
-        {
-            Logger.LogInfo($"Search '.csproj' at {assemblyPath}");
-            var currentDir = new DirectoryInfo(assemblyPath).Parent;
-            while (currentDir != null)
-            {
-                if (currentDir.EnumerateFiles("*.csproj").Any())
-                    return currentDir.FullName;
-                currentDir = currentDir.Parent;
-            }
+        if (!string.IsNullOrWhiteSpace(Settings.GodotProjectPath))
+            return ResolveConfiguredGodotProjectRoot(assemblyPath, Settings.GodotProjectPath);
 
-            throw new FileNotFoundException("Project file does not exist");
-        }
-        catch (Exception ex)
+        Logger.LogInfo($"Search Godot project root at {assemblyPath}");
+        var currentDir = ResolveAssemblyDirectory(assemblyPath);
+        DirectoryInfo? fallbackProjectDirectory = null;
+        while (currentDir != null)
         {
-            Logger.LogError($"Unable to locate .csproj file: {ex.Message}");
-            throw new FileNotFoundException("Project file does not exist");
+            if (File.Exists(Path.Combine(currentDir.FullName, "project.godot")))
+                return currentDir.FullName;
+
+            if (fallbackProjectDirectory == null && currentDir.EnumerateFiles("*.csproj").Any())
+                fallbackProjectDirectory = currentDir;
+
+            currentDir = currentDir.Parent;
         }
+
+        if (fallbackProjectDirectory != null)
+        {
+            Logger.LogWarning($"Unable to locate project.godot for '{assemblyPath}'. Falling back to project directory: {fallbackProjectDirectory.FullName}");
+            return fallbackProjectDirectory.FullName;
+        }
+
+        var message = $"Unable to locate a Godot project root for '{assemblyPath}'. Set <GodotProjectPath> in the GdUnit4 runsettings to a directory containing project.godot or to project.godot itself.";
+        Logger.LogError(message);
+        throw new FileNotFoundException(message);
+    }
+
+    private string ResolveConfiguredGodotProjectRoot(string assemblyPath, string configuredPath)
+    {
+        var trimmedPath = configuredPath.Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(trimmedPath))
+        {
+            var message = "GdUnit4 setting <GodotProjectPath> is empty. Set it to a directory containing project.godot or to project.godot itself.";
+            Logger.LogError(message);
+            throw new FileNotFoundException(message);
+        }
+
+        var candidatePaths = BuildGodotProjectPathCandidates(assemblyPath, trimmedPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        foreach (var candidatePath in candidatePaths)
+        {
+            var godotProjectRoot = TryResolveGodotProjectRoot(candidatePath);
+            if (!string.IsNullOrWhiteSpace(godotProjectRoot))
+            {
+                Logger.LogInfo($"Resolved Godot project root from <GodotProjectPath>: {godotProjectRoot}");
+                return godotProjectRoot;
+            }
+        }
+
+        var failureMessage = $"Configured <GodotProjectPath> '{configuredPath}' does not resolve to a Godot project. Expected a directory containing project.godot or a direct path to project.godot. Attempted: {string.Join(", ", candidatePaths)}";
+        Logger.LogError(failureMessage);
+        throw new FileNotFoundException(failureMessage);
+    }
+
+    private IEnumerable<string> BuildGodotProjectPathCandidates(string assemblyPath, string configuredPath)
+    {
+        if (Path.IsPathRooted(configuredPath))
+        {
+            yield return Path.GetFullPath(configuredPath);
+            yield break;
+        }
+
+        var assemblyDirectory = ResolveAssemblyDirectory(assemblyPath);
+        if (assemblyDirectory == null)
+        {
+            var message = $"Relative <GodotProjectPath> '{configuredPath}' cannot be resolved because test assembly path '{assemblyPath}' is not absolute. Use an absolute <GodotProjectPath> or ensure the test platform provides an absolute assembly path.";
+            Logger.LogError(message);
+            throw new FileNotFoundException(message);
+        }
+
+        Logger.LogWarning($"Relative <GodotProjectPath> '{configuredPath}' is resolved from test assembly directory '{assemblyDirectory.FullName}'. VSTest exposes runsettings XML to adapters but not the runsettings file path, so gdUnit cannot use the runsettings directory as a base here.");
+        yield return Path.GetFullPath(Path.Combine(assemblyDirectory.FullName, configuredPath));
+    }
+
+    private static DirectoryInfo? ResolveAssemblyDirectory(string assemblyPath)
+    {
+        if (string.IsNullOrWhiteSpace(assemblyPath) || !Path.IsPathRooted(assemblyPath))
+            return null;
+
+        var fullAssemblyPath = Path.GetFullPath(assemblyPath);
+        return new FileInfo(fullAssemblyPath).Directory;
+    }
+
+    private static string? TryResolveGodotProjectRoot(string candidatePath)
+    {
+        var fullPath = Path.GetFullPath(candidatePath);
+        if (File.Exists(fullPath) && string.Equals(Path.GetFileName(fullPath), "project.godot", StringComparison.OrdinalIgnoreCase))
+            return Path.GetDirectoryName(fullPath);
+
+        if (Directory.Exists(fullPath) && File.Exists(Path.Combine(fullPath, "project.godot")))
+            return fullPath;
+
+        return null;
     }
 }

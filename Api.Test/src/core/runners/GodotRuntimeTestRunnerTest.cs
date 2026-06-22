@@ -54,7 +54,8 @@ public class GodotRuntimeTestRunnerTest
         LoggerMock.Object,
         DebuggerFrameworkMock.Object,
         settings ?? new TestEngineSettings { CompileProcessTimeout = timeout },
-        assemblyPath);
+        assemblyPath,
+        TestTempDirectory!);
 
     /// <summary>
     ///     Clean up after tests
@@ -108,9 +109,10 @@ public class GodotRuntimeTestRunnerTest
         var runner = CreateTestRunner(1000, settings);
         var runtimeLogFile = Path.Combine(TestTempDirectory!, "runtime.log");
 
-        var arguments = runner.BuildGodotArguments(runtimeLogFile);
+        var arguments = runner.BuildGodotArguments(TestTempDirectory!, runtimeLogFile);
 
         AssertThat(arguments).Contains("--path");
+        AssertThat(arguments).Contains(Path.GetFullPath(TestTempDirectory!));
         AssertThat(arguments).Contains("-s");
         AssertThat(arguments).Contains("res://gdunit4_testadapter_v5/GdUnit4TestRunnerScene.cs");
         AssertThat(arguments).Contains("--pipe-name");
@@ -122,13 +124,14 @@ public class GodotRuntimeTestRunnerTest
     }
 
     [TestCase]
-    public void BuildCompileGodotArgumentsIncludesLogFile()
+    public void BuildCompileGodotArgumentsIncludesProjectRootAndLogFile()
     {
         var compileLogFile = Path.Combine(TestTempDirectory!, "compile.log");
 
         var arguments = GodotRuntimeTestRunner.BuildCompileGodotArguments(TestTempDirectory!, compileLogFile);
 
         AssertThat(arguments).Contains("--path");
+        AssertThat(arguments).Contains(Path.GetFullPath(TestTempDirectory!));
         AssertThat(arguments).Contains("--log-file");
         AssertThat(arguments).Contains(compileLogFile);
     }

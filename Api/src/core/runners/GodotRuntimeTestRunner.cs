@@ -50,8 +50,9 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
     /// <param name="debuggerFramework">Framework for debugging support.</param>
     /// <param name="settings">Test engine configuration settings.</param>
     /// <param name="assemblyPath">Path or identifier of the test assembly used as part of the runner identity.</param>
-    internal GodotRuntimeTestRunner(ITestEngineLogger logger, IDebuggerFramework debuggerFramework, TestEngineSettings settings, string assemblyPath)
-        : this(logger, debuggerFramework, settings, CreateRunnerIdentity(assemblyPath))
+    /// <param name="godotProjectRoot">Absolute path to the Godot project root.</param>
+    internal GodotRuntimeTestRunner(ITestEngineLogger logger, IDebuggerFramework debuggerFramework, TestEngineSettings settings, string assemblyPath, string godotProjectRoot)
+        : this(logger, debuggerFramework, settings, CreateRunnerIdentity(assemblyPath), godotProjectRoot)
     {
     }
 
@@ -59,11 +60,13 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         ITestEngineLogger logger,
         IDebuggerFramework debuggerFramework,
         TestEngineSettings settings,
-        (string RunnerId, string PipeName) identity)
+        (string RunnerId, string PipeName) identity,
+        string godotProjectRoot)
         : base(new GodotRuntimeExecutor(logger, identity.PipeName), logger, settings)
     {
         RunnerId = identity.RunnerId;
         PipeName = identity.PipeName;
+        GodotProjectRoot = Path.GetFullPath(godotProjectRoot);
         RunnerSceneDirectory = NormalizeRunnerSceneDirectory(settings.RunnerSceneDirectory);
         this.settings = settings;
         DebuggerFramework = debuggerFramework;
@@ -72,6 +75,8 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
     internal string RunnerId { get; }
 
     internal string PipeName { get; }
+
+    internal string GodotProjectRoot { get; }
 
     internal string RunnerSceneDirectory { get; }
 
@@ -129,7 +134,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
     {
         lock (ProcessLock)
         {
-            var workingDirectory = Environment.CurrentDirectory;
+            var workingDirectory = GodotProjectRoot;
             var compileLogFilePath = settings.UseUniqueLogFiles
                 ? ResolveRunnerLogFilePath(workingDirectory, "compile.log")
                 : null;
@@ -148,7 +153,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
             Logger.LogInfo("======== Running GdUnit4 Godot Runtime Test Runner ========");
 
             var processStartInfo =
-                new ProcessStartInfo(godotBinary, BuildGodotArguments(runtimeLogFilePath))
+                new ProcessStartInfo(godotBinary, BuildGodotArguments(workingDirectory, runtimeLogFilePath))
                 {
                     StandardOutputEncoding = Encoding.Default,
                     RedirectStandardOutput = true,
@@ -319,9 +324,9 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         }
     }
 
-    internal string BuildGodotArguments(string? logFilePath = null)
+    internal string BuildGodotArguments(string godotProjectRoot, string? logFilePath = null)
     {
-        var arguments = new StringBuilder($"--path . -d -s {QuoteArgument(BuildRunnerSceneResourcePath())}");
+        var arguments = new StringBuilder($"--path {QuoteArgument(Path.GetFullPath(godotProjectRoot))} -d -s {QuoteArgument(BuildRunnerSceneResourcePath())}");
         if (!string.IsNullOrWhiteSpace(settings.Parameters))
             _ = arguments.Append(' ').Append(settings.Parameters);
 
@@ -341,9 +346,9 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         return Path.GetFullPath(Path.Combine(runnerDirectory, fileName));
     }
 
-    internal static string BuildCompileGodotArguments(string _, string? logFilePath = null)
+    internal static string BuildCompileGodotArguments(string godotProjectRoot, string? logFilePath = null)
     {
-        var arguments = new StringBuilder("--path . -e --headless --quit-after 1000 --verbose");
+        var arguments = new StringBuilder($"--path {QuoteArgument(Path.GetFullPath(godotProjectRoot))} -e --headless --quit-after 1000 --verbose");
         AppendLogFileArgument(arguments, logFilePath);
         return arguments.ToString();
     }
