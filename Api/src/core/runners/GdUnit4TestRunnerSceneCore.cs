@@ -38,10 +38,12 @@ public partial class GdUnit4TestRunnerSceneCore : SceneTree
     // ReSharper disable once PartialTypeWithSinglePart
     private sealed partial class TestRunner : Node
     {
+        private const string PIPE_NAME_ARGUMENT = "--pipe-name";
+
         public TestRunner()
         {
             Logger = new GodotLogger();
-            Server = new GodotGdUnit4RestServer(Logger);
+            Server = new GodotGdUnit4RestServer(Logger, ResolvePipeName());
         }
 
         private ITestEngineLogger Logger { get; }
@@ -56,6 +58,31 @@ public partial class GdUnit4TestRunnerSceneCore : SceneTree
         {
             if (what == NotificationPredelete)
                 Server.Stop();
+        }
+
+        private static string ResolvePipeName()
+        {
+            var pipeName = ResolveOptionalArgument(PIPE_NAME_ARGUMENT);
+            if (string.IsNullOrWhiteSpace(pipeName))
+                throw new InvalidOperationException("Missing required '--pipe-name' argument.");
+
+            return pipeName;
+        }
+
+        private static string? ResolveOptionalArgument(string argumentName)
+        {
+            var args = OS.GetCmdlineArgs();
+            for (var index = 0; index < args.Length; index++)
+            {
+                if (args[index] == argumentName && index < args.Length - 1)
+                    return args[index + 1];
+
+                var argumentPrefix = $"{argumentName}=";
+                if (args[index].StartsWith(argumentPrefix, StringComparison.Ordinal))
+                    return args[index][argumentPrefix.Length..];
+            }
+
+            return null;
         }
     }
 }

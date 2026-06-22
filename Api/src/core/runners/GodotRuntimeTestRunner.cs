@@ -22,6 +22,10 @@ using Environment = Environment;
     "Reliability",
     "CA2000:Dispose objects before losing scope",
     Justification = "GodotRuntimeExecutor ownership is transferred to base class which handles disposal")]
+[SuppressMessage(
+    "StyleCop.CSharp.OrderingRules",
+    "SA1204:Static elements should appear before instance elements",
+    Justification = "Static helpers are colocated with the runner operations they support.")]
 internal sealed class GodotRuntimeTestRunner : BaseTestRunner
 {
     /// <summary>
@@ -34,17 +38,32 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="GodotRuntimeTestRunner" /> class.
-    ///     Initializes a new instance of the GodotRuntimeTestRunner.
     /// </summary>
     /// <param name="logger">The test engine logger for diagnostic output.</param>
     /// <param name="debuggerFramework">Framework for debugging support.</param>
     /// <param name="settings">Test engine configuration settings.</param>
-    internal GodotRuntimeTestRunner(ITestEngineLogger logger, IDebuggerFramework debuggerFramework, TestEngineSettings settings)
-        : base(new GodotRuntimeExecutor(logger), logger, settings)
+    /// <param name="assemblyPath">Path or identifier of the test assembly used as part of the runner identity.</param>
+    internal GodotRuntimeTestRunner(ITestEngineLogger logger, IDebuggerFramework debuggerFramework, TestEngineSettings settings, string assemblyPath)
+        : this(logger, debuggerFramework, settings, CreateRunnerIdentity(assemblyPath))
     {
+    }
+
+    private GodotRuntimeTestRunner(
+        ITestEngineLogger logger,
+        IDebuggerFramework debuggerFramework,
+        TestEngineSettings settings,
+        (string RunnerId, string PipeName) identity)
+        : base(new GodotRuntimeExecutor(logger, identity.PipeName), logger, settings)
+    {
+        RunnerId = identity.RunnerId;
+        PipeName = identity.PipeName;
         this.settings = settings;
         DebuggerFramework = debuggerFramework;
     }
+
+    internal string RunnerId { get; }
+
+    internal string PipeName { get; }
 
     private object ProcessLock { get; } = new();
 
@@ -109,7 +128,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
             Logger.LogInfo("======== Running GdUnit4 Godot Runtime Test Runner ========");
 
             var processStartInfo =
-                new ProcessStartInfo(godotBinary, BuildGodotArguments(settings))
+                new ProcessStartInfo(godotBinary, BuildGodotArguments())
                 {
                     StandardOutputEncoding = Encoding.Default,
                     RedirectStandardOutput = true,
@@ -285,8 +304,44 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         }
     }
 
-    private static string BuildGodotArguments(TestEngineSettings testEngineSettings)
-        => $"--path . -d -s res://{TEMP_TEST_RUNNER_DIR}/GdUnit4TestRunnerScene.cs {testEngineSettings.Parameters}";
+    internal string BuildGodotArguments()
+    {
+        var arguments = new StringBuilder($"--path . -d -s res://{TEMP_TEST_RUNNER_DIR}/GdUnit4TestRunnerScene.cs");
+        if (!string.IsNullOrWhiteSpace(settings.Parameters))
+            _ = arguments.Append(' ').Append(settings.Parameters);
+
+        _ = arguments.Append(" --pipe-name ").Append(QuoteArgument(PipeName));
+        return arguments.ToString();
+    }
+
+    internal static string CreateRunnerId(string assemblyId)
+    {
+        var sanitizedAssemblyId = SanitizeAssemblyId(assemblyId);
+        return $"{sanitizedAssemblyId}-{Environment.ProcessId}-{Guid.NewGuid():N}";
+    }
+
+    internal static string CreatePipeName(string runnerId) => $"gdunit4-{runnerId}";
+
+    private static (string RunnerId, string PipeName) CreateRunnerIdentity(string assemblyId)
+    {
+        var runnerId = CreateRunnerId(assemblyId);
+        return (runnerId, CreatePipeName(runnerId));
+    }
+
+    private static string SanitizeAssemblyId(string assemblyId)
+    {
+        var fileName = Path.GetFileNameWithoutExtension(assemblyId);
+        var source = string.IsNullOrWhiteSpace(fileName) ? "unknown-assembly" : fileName;
+        var sanitized = new StringBuilder(source.Length);
+        foreach (var character in source)
+            _ = sanitized.Append(char.IsLetterOrDigit(character) ? char.ToLowerInvariant(character) : '-');
+
+        var result = sanitized.ToString().Trim('-');
+        return string.IsNullOrWhiteSpace(result) ? "unknown-assembly" : result;
+    }
+
+    private static string QuoteArgument(string value)
+        => $"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
 
     private bool RunDotnetRestore(string workingDirectory)
     {

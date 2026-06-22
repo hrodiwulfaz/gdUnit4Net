@@ -50,10 +50,11 @@ public class GodotRuntimeTestRunnerTest
         DebuggerFrameworkMock = new Mock<IDebuggerFramework>();
     }
 
-    private GodotRuntimeTestRunner CreateTestRunner(int timeout) => new(
+    private GodotRuntimeTestRunner CreateTestRunner(int timeout, TestEngineSettings? settings = null, string assemblyPath = "Outpostia.Tests.dll") => new(
         LoggerMock.Object,
         DebuggerFrameworkMock.Object,
-        new TestEngineSettings { CompileProcessTimeout = timeout });
+        settings ?? new TestEngineSettings { CompileProcessTimeout = timeout },
+        assemblyPath);
 
     /// <summary>
     ///     Clean up after tests
@@ -82,6 +83,38 @@ public class GodotRuntimeTestRunnerTest
         // Reset mocks to clear any recorded invocations
         LoggerMock.Reset();
         DebuggerFrameworkMock.Reset();
+    }
+
+    [TestCase]
+    public void CreateRunnerIdCreatesUniqueSanitizedIds()
+    {
+        var firstRunnerId = GodotRuntimeTestRunner.CreateRunnerId("Outpostia.Tests.dll");
+        var secondRunnerId = GodotRuntimeTestRunner.CreateRunnerId("Outpostia.Tests.dll");
+
+        AssertThat(firstRunnerId).StartsWith($"outpostia-tests-{Environment.ProcessId}-");
+        AssertThat(secondRunnerId).StartsWith($"outpostia-tests-{Environment.ProcessId}-");
+        AssertThat(firstRunnerId).IsNotEqual(secondRunnerId);
+        AssertThat(GodotRuntimeTestRunner.CreatePipeName(firstRunnerId)).IsEqual($"gdunit4-{firstRunnerId}");
+    }
+
+    [TestCase]
+    public void BuildGodotArgumentsIncludesPipeName()
+    {
+        var settings = new TestEngineSettings
+        {
+            CompileProcessTimeout = 1000,
+            Parameters = "\"--minimized\""
+        };
+        var runner = CreateTestRunner(1000, settings);
+
+        var arguments = runner.BuildGodotArguments();
+
+        AssertThat(arguments).Contains("--path");
+        AssertThat(arguments).Contains("-s");
+        AssertThat(arguments).Contains("res://gdunit4_testadapter_v5/GdUnit4TestRunnerScene.cs");
+        AssertThat(arguments).Contains("--pipe-name");
+        AssertThat(arguments).Contains(runner.PipeName);
+        AssertThat(arguments).Contains("\"--minimized\"");
     }
 
     /// <summary>
