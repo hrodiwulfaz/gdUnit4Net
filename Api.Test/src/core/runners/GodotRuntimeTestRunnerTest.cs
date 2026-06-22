@@ -133,6 +133,32 @@ public class GodotRuntimeTestRunnerTest
         AssertThat(arguments).Contains(compileLogFile);
     }
 
+    [TestCase]
+    public void RunnerSceneDirectoryNormalizesToProjectRelativeResourcePath()
+    {
+        var settings = new TestEngineSettings
+        {
+            CompileProcessTimeout = 1000,
+            RunnerSceneDirectory = @"res://Data\Testing//Generated/./GdUnit4"
+        };
+        var runner = CreateTestRunner(1000, settings);
+
+        var destinationPath = runner.ResolveRunnerSceneDirectoryPath(TestTempDirectory!);
+
+        AssertThat(runner.RunnerSceneDirectory).IsEqual("Data/Testing/Generated/GdUnit4");
+        AssertThat(runner.BuildRunnerSceneResourcePath()).IsEqual("res://Data/Testing/Generated/GdUnit4/GdUnit4TestRunnerScene.cs");
+        AssertThat(destinationPath).IsEqual(Path.GetFullPath(Path.Combine(TestTempDirectory!, "Data", "Testing", "Generated", "GdUnit4")));
+    }
+
+    [TestCase]
+    public void RunnerSceneDirectoryRejectsAbsoluteAndEscapingPaths()
+    {
+        AssertThrown(() => GodotRuntimeTestRunner.NormalizeRunnerSceneDirectory("/tmp/generated"))
+            .StartsWithMessage("RunnerSceneDirectory '/tmp/generated' must be project-relative");
+        AssertThrown(() => GodotRuntimeTestRunner.NormalizeRunnerSceneDirectory("Data/../Generated"))
+            .StartsWithMessage("RunnerSceneDirectory 'Data/../Generated' cannot contain '..'");
+    }
+
     /// <summary>
     ///     Test successful execution of InstallTestRunnerClasses
     /// </summary>
@@ -210,7 +236,7 @@ public class GodotRuntimeTestRunnerTest
         VerifyLoggerError($"Rebuild Godot Project ends with exit code: {errorCode}");
 
         // Verify the runner file was cleaned up after timeout
-        var runnerPath = Path.Combine(workingDirectory, GodotRuntimeTestRunner.TEMP_TEST_RUNNER_DIR, "GdUnit4TestRunnerScene.cs");
+        var runnerPath = Path.Combine(workingDirectory, GodotRuntimeTestRunner.TEMP_TEST_RUNNER_DIR, GodotRuntimeTestRunner.TEST_RUNNER_SCENE_FILE_NAME);
         AssertThat(File.Exists(runnerPath)).OverrideFailureMessage("Runner file should be cleaned up after timeout").IsFalse();
     }
 
@@ -234,7 +260,7 @@ public class GodotRuntimeTestRunnerTest
         VerifyLoggerError("dotnet build failed with exit code: 1");
 
         // Verify the runner file was cleaned up after failure
-        var runnerPath = Path.Combine(workingDirectory, GodotRuntimeTestRunner.TEMP_TEST_RUNNER_DIR, "GdUnit4TestRunnerScene.cs");
+        var runnerPath = Path.Combine(workingDirectory, GodotRuntimeTestRunner.TEMP_TEST_RUNNER_DIR, GodotRuntimeTestRunner.TEST_RUNNER_SCENE_FILE_NAME);
         AssertThat(File.Exists(runnerPath)).OverrideFailureMessage("Runner file should be cleaned up after compilation failure").IsFalse();
     }
 
@@ -255,8 +281,28 @@ public class GodotRuntimeTestRunnerTest
         VerifyLoggerInfo("======== Installing GdUnit4 Godot Runtime Test Runner ========");
 
         // Verify the runner file was created in the correct location
-        var runnerPath = Path.Combine(workingDirectory, GodotRuntimeTestRunner.TEMP_TEST_RUNNER_DIR, "GdUnit4TestRunnerScene.cs");
+        var runnerPath = Path.Combine(workingDirectory, GodotRuntimeTestRunner.TEMP_TEST_RUNNER_DIR, GodotRuntimeTestRunner.TEST_RUNNER_SCENE_FILE_NAME);
         AssertThat(File.Exists(runnerPath)).OverrideFailureMessage($"Runner file should exist at {runnerPath}").IsTrue();
+    }
+
+    [TestCase]
+    public void InstallTestRunnerUsesConfiguredSceneDirectory()
+    {
+        var workingDirectory = Path.Combine(TestTempDirectory!, "working_dir_configured");
+        Directory.CreateDirectory(workingDirectory);
+        var settings = new TestEngineSettings
+        {
+            CompileProcessTimeout = 1000,
+            RunnerSceneDirectory = "Data/Testing/Generated/GdUnit4"
+        };
+
+        var result = CreateTestRunner(1000, settings).InstallTestRunnerClasses(workingDirectory, false);
+
+        AssertThat(result).OverrideFailureMessage("InstallTestRunnerClasses should return true").IsTrue();
+        var runnerPath = Path.Combine(workingDirectory, "Data", "Testing", "Generated", "GdUnit4", GodotRuntimeTestRunner.TEST_RUNNER_SCENE_FILE_NAME);
+        AssertThat(File.Exists(runnerPath)).OverrideFailureMessage($"Runner file should exist at {runnerPath}").IsTrue();
+        var defaultRunnerPath = Path.Combine(workingDirectory, GodotRuntimeTestRunner.TEMP_TEST_RUNNER_DIR, GodotRuntimeTestRunner.TEST_RUNNER_SCENE_FILE_NAME);
+        AssertThat(File.Exists(defaultRunnerPath)).OverrideFailureMessage($"Runner file should not exist at {defaultRunnerPath}").IsFalse();
     }
 
 

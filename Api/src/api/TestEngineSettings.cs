@@ -79,4 +79,9 @@ public sealed class TestEngineSettings
     ///     Gets the root directory used for per-runner runtime artifacts when unique log files are enabled.
     /// </summary>
     public string LogFileRoot { get; init; } = "tmp/gdunit-runs";
+
+    /// <summary>
+    ///     Gets the project-relative directory where the generated Godot runtime runner scene is written.
+    /// </summary>
+    public string RunnerSceneDirectory { get; init; } = "gdunit4_testadapter_v5";
 }

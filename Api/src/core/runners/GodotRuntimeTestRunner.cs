@@ -33,6 +33,11 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
     /// </summary>
     internal const string TEMP_TEST_RUNNER_DIR = "gdunit4_testadapter_v5";
 
+    /// <summary>
+    ///     File name for the generated Godot runtime test runner scene.
+    /// </summary>
+    internal const string TEST_RUNNER_SCENE_FILE_NAME = "GdUnit4TestRunnerScene.cs";
+
     private const string DEFAULT_LOG_FILE_ROOT = "tmp/gdunit-runs";
 
     private readonly TestEngineSettings settings;
@@ -59,6 +64,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
     {
         RunnerId = identity.RunnerId;
         PipeName = identity.PipeName;
+        RunnerSceneDirectory = NormalizeRunnerSceneDirectory(settings.RunnerSceneDirectory);
         this.settings = settings;
         DebuggerFramework = debuggerFramework;
     }
@@ -66,6 +72,8 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
     internal string RunnerId { get; }
 
     internal string PipeName { get; }
+
+    internal string RunnerSceneDirectory { get; }
 
     private object ProcessLock { get; } = new();
 
@@ -192,24 +200,19 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
 
     internal bool InstallTestRunnerClasses(string workingDirectory, bool reCompile = true)
     {
-        var destinationFolderPath = Path.Combine(workingDirectory, @$"{TEMP_TEST_RUNNER_DIR}");
+        var destinationFolderPath = ResolveRunnerSceneDirectoryPath(workingDirectory);
         if (!Directory.Exists(destinationFolderPath))
             _ = Directory.CreateDirectory(destinationFolderPath);
 
-        var sceneRunnerSource = Path.Combine(destinationFolderPath, "GdUnit4TestRunnerScene.cs");
+        var sceneRunnerSource = Path.Combine(destinationFolderPath, TEST_RUNNER_SCENE_FILE_NAME);
+        var content = BuildTestRunnerSceneContent();
 
-        // check if the scene runner already installed
-        if (File.Exists(sceneRunnerSource))
+        // check if the scene runner already installed and up to date
+        if (File.Exists(sceneRunnerSource) && string.Equals(File.ReadAllText(sceneRunnerSource), content, StringComparison.Ordinal))
             return true;
 
         Logger.LogInfo("======== Installing GdUnit4 Godot Runtime Test Runner ========");
         Logger.LogInfo($"Installing GdUnit4TestRunnerScene at {destinationFolderPath}");
-
-        var assembly = Assembly.GetExecutingAssembly();
-        using var stream = assembly.GetManifestResourceStream("GdUnit4.src.core.runners.GdUnit4TestRunnerSceneTemplate.cs");
-        using var reader = new StreamReader(stream!);
-        var content = reader.ReadToEnd();
-        content = content.Replace("GdUnit4TestRunnerSceneTemplate", "GdUnit4TestRunnerScene", StringComparison.Ordinal);
         File.WriteAllText(sceneRunnerSource, content, Encoding.UTF8);
 
         if (!reCompile)
@@ -318,7 +321,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
 
     internal string BuildGodotArguments(string? logFilePath = null)
     {
-        var arguments = new StringBuilder($"--path . -d -s res://{TEMP_TEST_RUNNER_DIR}/GdUnit4TestRunnerScene.cs");
+        var arguments = new StringBuilder($"--path . -d -s {QuoteArgument(BuildRunnerSceneResourcePath())}");
         if (!string.IsNullOrWhiteSpace(settings.Parameters))
             _ = arguments.Append(' ').Append(settings.Parameters);
 
@@ -343,6 +346,48 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         var arguments = new StringBuilder("--path . -e --headless --quit-after 1000 --verbose");
         AppendLogFileArgument(arguments, logFilePath);
         return arguments.ToString();
+    }
+
+    internal string BuildRunnerSceneResourcePath() => $"res://{RunnerSceneDirectory}/{TEST_RUNNER_SCENE_FILE_NAME}";
+
+    internal string ResolveRunnerSceneDirectoryPath(string godotProjectRoot)
+    {
+        var destinationFolderPath = Path.GetFullPath(Path.Combine(godotProjectRoot, RunnerSceneDirectory.Replace('/', Path.DirectorySeparatorChar)));
+        var normalizedProjectRoot = Path.GetFullPath(godotProjectRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var normalizedDestination = destinationFolderPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!normalizedDestination.StartsWith(normalizedProjectRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"RunnerSceneDirectory '{RunnerSceneDirectory}' resolves outside the Godot project root '{godotProjectRoot}'. Use a project-relative directory without '..'.");
+        }
+
+        return destinationFolderPath;
+    }
+
+    internal static string NormalizeRunnerSceneDirectory(string? configuredDirectory)
+    {
+        var rawDirectory = configuredDirectory?.Trim().Trim('"') ?? string.Empty;
+        if (rawDirectory.StartsWith("res://", StringComparison.OrdinalIgnoreCase))
+            rawDirectory = rawDirectory["res://".Length..];
+
+        rawDirectory = rawDirectory.Replace('\\', '/');
+        if (string.IsNullOrWhiteSpace(rawDirectory))
+            throw new InvalidOperationException("RunnerSceneDirectory must be a non-empty project-relative directory.");
+
+        if (rawDirectory.StartsWith('/') || Path.IsPathRooted(rawDirectory) || rawDirectory.Contains(':', StringComparison.Ordinal))
+            throw new InvalidOperationException($"RunnerSceneDirectory '{configuredDirectory}' must be project-relative and cannot be absolute.");
+
+        var segments = rawDirectory
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Where(segment => segment != ".")
+            .ToArray();
+        if (segments.Length == 0)
+            throw new InvalidOperationException("RunnerSceneDirectory must be a non-empty project-relative directory.");
+
+        if (segments.Any(segment => segment == ".."))
+            throw new InvalidOperationException($"RunnerSceneDirectory '{configuredDirectory}' cannot contain '..' path segments.");
+
+        return string.Join('/', segments);
     }
 
     internal static string CreateRunnerId(string assemblyId)
@@ -385,6 +430,15 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
 
     private static string QuoteArgument(string value)
         => $"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+
+    private static string BuildTestRunnerSceneContent()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        using var stream = assembly.GetManifestResourceStream("GdUnit4.src.core.runners.GdUnit4TestRunnerSceneTemplate.cs");
+        using var reader = new StreamReader(stream!);
+        var content = reader.ReadToEnd();
+        return content.Replace("GdUnit4TestRunnerSceneTemplate", "GdUnit4TestRunnerScene", StringComparison.Ordinal);
+    }
 
     private string ResolveArtifactRootPath(string workingDirectory)
     {
