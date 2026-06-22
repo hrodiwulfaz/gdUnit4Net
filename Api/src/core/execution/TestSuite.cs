@@ -65,24 +65,14 @@ internal sealed class TestSuite : IDisposable
 
     private static Type FindTypeOnAssembly(string assemblyPath, string clazz)
     {
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            // if (assembly.Location != assemblyName)
-            //    continue;
-            var type = assembly.GetType(clazz);
-            if (type != null)
-                return type;
-        }
-
         try
         {
-            var assembly = Assembly.Load(AssemblyName.GetAssemblyName(assemblyPath));
-            return assembly.GetType(clazz)!;
+            return TestAssemblyLoader.ResolveType(assemblyPath, clazz);
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Failed to resolve type '{clazz}': {ex.Message}");
-            throw new InvalidOperationException($"Could not find type {clazz} on assembly {assemblyPath}");
+            Console.Error.WriteLine($"Failed to resolve type '{clazz}' from assembly '{assemblyPath}': {ex.Message}");
+            throw new InvalidOperationException($"Could not find type '{clazz}' on assembly '{assemblyPath}'. {ex.Message}", ex);
         }
     }
 }
