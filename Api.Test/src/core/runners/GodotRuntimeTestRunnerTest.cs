@@ -168,6 +168,50 @@ public class GodotRuntimeTestRunnerTest
             .StartsWithMessage("RunnerSceneDirectory 'Data/../Generated' cannot contain '..'");
     }
 
+    [TestCase]
+    public void DotnetBuildArgumentsUseProjectGodotAssemblyProject()
+    {
+        var workingDirectory = Path.Combine(TestTempDirectory!, "working_dir_project_godot");
+        Directory.CreateDirectory(workingDirectory);
+        File.WriteAllText(
+            Path.Combine(workingDirectory, "project.godot"),
+            """
+            [dotnet]
+            project/assembly_name="ExampleGame"
+            """);
+        var projectPath = Path.Combine(workingDirectory, "ExampleGame.csproj");
+        File.WriteAllText(projectPath, "<Project />");
+
+        var arguments = CreateTestRunner(1000).BuildDotnetBuildArguments(workingDirectory);
+
+        AssertThat(arguments).StartsWith($"build \"{Path.GetFullPath(projectPath)}\" --configuration Debug");
+        AssertThat(arguments).Contains("--no-restore");
+    }
+
+    [TestCase]
+    public void DotnetBuildArgumentsFallBackToSingleProjectFile()
+    {
+        var workingDirectory = Path.Combine(TestTempDirectory!, "working_dir_single_project");
+        Directory.CreateDirectory(workingDirectory);
+        var projectPath = Path.Combine(workingDirectory, "SingleGame.csproj");
+        File.WriteAllText(projectPath, "<Project />");
+
+        var arguments = CreateTestRunner(1000).BuildDotnetBuildArguments(workingDirectory);
+
+        AssertThat(arguments).StartsWith($"build \"{Path.GetFullPath(projectPath)}\" --configuration Debug");
+    }
+
+    [TestCase]
+    public void DotnetBuildArgumentsFallBackToWorkingDirectoryWhenProjectCannotBeResolved()
+    {
+        var workingDirectory = Path.Combine(TestTempDirectory!, "working_dir_no_project");
+        Directory.CreateDirectory(workingDirectory);
+
+        var arguments = CreateTestRunner(1000).BuildDotnetBuildArguments(workingDirectory);
+
+        AssertThat(arguments).StartsWith("build --configuration Debug");
+    }
+
     /// <summary>
     ///     Test successful execution of InstallTestRunnerClasses
     /// </summary>

@@ -232,7 +232,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
 
         if (!reCompile)
             return true;
-        var isSuccess = RunDotnetRestore(workingDirectory);
+        var isSuccess = RunDotnetBuild(workingDirectory);
         if (!isSuccess)
             CleanupRunnerOnFailure(sceneRunnerSource);
         return isSuccess;
@@ -422,6 +422,46 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
 
     internal static string CreatePipeName(string runnerId) => $"gdunit4-{runnerId}";
 
+    internal string BuildDotnetBuildArguments(string workingDirectory)
+    {
+        var targetPath = ResolveGodotCSharpProjectPath(workingDirectory);
+        var targetArgument = string.IsNullOrWhiteSpace(targetPath)
+            ? string.Empty
+            : QuoteArgument(targetPath) + " ";
+        return "build " +
+               targetArgument +
+               "--configuration Debug " +
+               "--verbosity normal " +
+               "--no-restore " +
+               "/p:BuildProjectReferences=false " +
+               "/p:_GetChildProjectCopyToOutputDirectoryItems=false " +
+               "/p:SkipCopyingFrameworkReferences=true ";
+    }
+
+    internal string? ResolveGodotCSharpProjectPath(string workingDirectory)
+    {
+        var projectRoot = Path.GetFullPath(workingDirectory);
+        var projectGodotPath = Path.Combine(projectRoot, "project.godot");
+        if (File.Exists(projectGodotPath))
+        {
+            var assemblyName = ReadProjectGodotSetting(projectGodotPath, "dotnet", "project/assembly_name");
+            if (!string.IsNullOrWhiteSpace(assemblyName))
+            {
+                var namedProjectPath = Path.Combine(projectRoot, $"{assemblyName}.csproj");
+                if (File.Exists(namedProjectPath))
+                    return Path.GetFullPath(namedProjectPath);
+            }
+        }
+
+        if (!Directory.Exists(projectRoot))
+            return null;
+
+        var projectPaths = Directory.GetFiles(projectRoot, "*.csproj", SearchOption.TopDirectoryOnly);
+        return projectPaths.Length == 1
+            ? Path.GetFullPath(projectPaths[0])
+            : null;
+    }
+
     private static (string RunnerId, string PipeName) CreateRunnerIdentity(string assemblyId)
     {
         var runnerId = CreateRunnerId(assemblyId);
@@ -527,17 +567,19 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         return null;
     }
 
-    private bool RunDotnetRestore(string workingDirectory)
+    private bool RunDotnetBuild(string workingDirectory)
     {
         try
         {
             Logger.LogInfo("Running dotnet build to ensure dependencies are available...");
-            var arguments = "build --configuration Debug " +
-                            "--verbosity normal " +
-                            "--no-restore " +
-                            "/p:BuildProjectReferences=false " + // Don't rebuild project refs
-                            "/p:_GetChildProjectCopyToOutputDirectoryItems=false " + // Don't copy child project items
-                            "/p:SkipCopyingFrameworkReferences=true "; // Skip framework refs (already present)
+            var targetPath = ResolveGodotCSharpProjectPath(workingDirectory);
+            if (string.IsNullOrWhiteSpace(targetPath))
+                Logger.LogWarning($"Unable to resolve a Godot C# project under {workingDirectory}; falling back to bare dotnet build in the working directory.");
+            else
+                Logger.LogInfo($"Resolved Godot C# project for dotnet build: {targetPath}");
+            Logger.LogInfo($"dotnet build timeout: {settings.CompileProcessTimeout}ms");
+            var arguments = BuildDotnetBuildArguments(workingDirectory);
+            Logger.LogInfo($"dotnet build command: dotnet {arguments}");
             var processStartInfo = new ProcessStartInfo("dotnet", arguments)
             {
                 RedirectStandardOutput = true,
@@ -575,12 +617,11 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
             restoreProcess.BeginErrorReadLine();
             restoreProcess.BeginOutputReadLine();
 
-            // Wait for restore to complete (should be quick)
-            var completed = restoreProcess.WaitForExit(30000); // 30 second timeout
+            var completed = restoreProcess.WaitForExit(settings.CompileProcessTimeout);
 
             if (!completed)
             {
-                Logger.LogWarning("dotnet build timed out after 30 seconds");
+                Logger.LogWarning($"dotnet build timed out after {settings.CompileProcessTimeout}ms");
                 restoreProcess.Kill(true);
                 return false;
             }
@@ -602,6 +643,38 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
             Logger.LogError($"Error running build restore: {ex.Message}");
             return false;
         }
+    }
+
+    private static string? ReadProjectGodotSetting(string projectGodotPath, string sectionName, string settingName)
+    {
+        var activeSection = string.Empty;
+        foreach (var rawLine in File.ReadLines(projectGodotPath))
+        {
+            var line = rawLine.Trim();
+            if (string.IsNullOrWhiteSpace(line) || line.StartsWith(';'))
+                continue;
+
+            if (line.StartsWith('[') && line.EndsWith(']'))
+            {
+                activeSection = line[1..^1];
+                continue;
+            }
+
+            if (!string.Equals(activeSection, sectionName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var separatorIndex = line.IndexOf('=', StringComparison.Ordinal);
+            if (separatorIndex < 0)
+                continue;
+
+            var key = line[..separatorIndex].Trim();
+            if (!string.Equals(key, settingName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            return line[(separatorIndex + 1)..].Trim().Trim('"');
+        }
+
+        return null;
     }
 
     private EventHandler ExitHandler(string source = "") => (sender, _) =>
