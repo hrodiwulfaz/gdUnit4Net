@@ -234,7 +234,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
             return true;
         var isSuccess = RunDotnetBuild(workingDirectory);
         if (!isSuccess)
-            CleanupRunnerOnFailure(sceneRunnerSource);
+            Logger.LogWarning($"Keeping generated runner file at {sceneRunnerSource} after dotnet build failure.");
         return isSuccess;
     }
 
@@ -711,31 +711,6 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         {
             lock (ProcessLock)
                 process = null;
-        }
-    }
-
-    /// <summary>
-    ///     Cleans up the installed runner file when compilation fails to ensure
-    ///     a fresh installation on the next run.
-    /// </summary>
-    /// <param name="runnerFilePath">Path to the runner file to remove.</param>
-    private void CleanupRunnerOnFailure(string runnerFilePath)
-    {
-        try
-        {
-            if (File.Exists(runnerFilePath))
-            {
-                Logger.LogInfo($"Cleaning up runner file at {runnerFilePath} due to compilation failure");
-                File.Delete(runnerFilePath);
-            }
-        }
-#pragma warning disable CA1031
-        catch (Exception ex)
-#pragma warning restore CA1031
-        {
-            Logger.LogError($"Failed to clean up runner file: {ex.Message}");
-
-            // We don't want to throw here as this is just cleanup
         }
     }
 }

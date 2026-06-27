@@ -288,9 +288,9 @@ public class GodotRuntimeTestRunnerTest
         var errorCode = Environment.OSVersion.Platform == PlatformID.Win32NT ? -1 : 137;
         VerifyLoggerError($"Rebuild Godot Project ends with exit code: {errorCode}");
 
-        // Verify the runner file was cleaned up after timeout
+        // Verify recompiling the Godot project does not create a runner file
         var runnerPath = Path.Combine(workingDirectory, GodotRuntimeTestRunner.TEMP_TEST_RUNNER_DIR, GodotRuntimeTestRunner.TEST_RUNNER_SCENE_FILE_NAME);
-        AssertThat(File.Exists(runnerPath)).OverrideFailureMessage("Runner file should be cleaned up after timeout").IsFalse();
+        AssertThat(File.Exists(runnerPath)).OverrideFailureMessage("Runner file should not be created by Godot project recompilation").IsFalse();
     }
 
     /// <summary>
@@ -312,16 +312,16 @@ public class GodotRuntimeTestRunnerTest
         // Verify error message was logged
         VerifyLoggerError("dotnet build failed with exit code: 1");
 
-        // Verify the runner file was cleaned up after failure
+        // Verify the deterministic runner file remains so the next run can skip reinstalling it
         var runnerPath = Path.Combine(workingDirectory, GodotRuntimeTestRunner.TEMP_TEST_RUNNER_DIR, GodotRuntimeTestRunner.TEST_RUNNER_SCENE_FILE_NAME);
-        AssertThat(File.Exists(runnerPath)).OverrideFailureMessage("Runner file should be cleaned up after compilation failure").IsFalse();
+        AssertThat(File.Exists(runnerPath)).OverrideFailureMessage("Runner file should remain after dotnet build failure").IsTrue();
     }
 
     [TestCase]
     public void TestInstallTestRunnerSuccess()
     {
         // Create a separate temp working directory
-        var workingDirectory = Path.Combine(TestTempDirectory!, "working_dir_failure");
+        var workingDirectory = Path.Combine(TestTempDirectory!, "working_dir_success");
         Directory.CreateDirectory(workingDirectory);
 
         // Act
