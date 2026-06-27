@@ -173,14 +173,14 @@ public sealed class GdUnit4TestDiscoverer : ITestDiscoverer
     /// <remarks>
     ///     Display name options:
     ///     - SimpleName: Uses the simple name from the descriptor
-    ///     - FullyQualifiedName: Uses the last part of the fully qualified name (after the last dot)
+    ///     - FullyQualifiedName: Uses the complete fully qualified name
     ///     - Default: Uses the managed method name.
     /// </remarks>
     private static string GetDisplayName(TestCaseDescriptor input, GdUnit4Settings gdUnitSettings)
         => gdUnitSettings.DisplayName switch
         {
             DisplayNameOptions.SimpleName => input.SimpleName,
-            DisplayNameOptions.FullyQualifiedName => input.FullyQualifiedName[(input.FullyQualifiedName.LastIndexOf('.') + 1)..],
+            DisplayNameOptions.FullyQualifiedName => input.FullyQualifiedName,
             _ => input.ManagedMethod
         };
 

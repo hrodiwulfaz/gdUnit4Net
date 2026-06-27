@@ -48,6 +48,7 @@ public class TestCaseFilterTest
                 Id = Guid.NewGuid(),
                 ManagedType = "TestNamespace.ExampleTestSuiteA",
                 ManagedMethod = "TestA",
+                SimpleName = "TestA",
                 FullyQualifiedName = "TestNamespace.ExampleTestSuiteA.TestA",
                 AssemblyPath = "/debug/examples.dll",
                 AttributeIndex = 0,
@@ -70,6 +71,7 @@ public class TestCaseFilterTest
                 Id = Guid.NewGuid(),
                 ManagedType = "TestNamespace.ExampleTestSuiteA",
                 ManagedMethod = "TestB",
+                SimpleName = "TestB",
                 FullyQualifiedName = "TestNamespace.ExampleTestSuiteA.TestB",
                 AssemblyPath = "/debug/examples.dll",
                 AttributeIndex = 0,
@@ -89,6 +91,7 @@ public class TestCaseFilterTest
                 Id = Guid.NewGuid(),
                 ManagedType = "OtherNamespace.ExampleTestSuiteB",
                 ManagedMethod = "TestA",
+                SimpleName = "TestA",
                 FullyQualifiedName = "OtherNamespace.ExampleTestSuiteB.TestA",
                 AssemblyPath = "/debug/examples.dll",
                 AttributeIndex = 0,
@@ -108,6 +111,7 @@ public class TestCaseFilterTest
                 Id = Guid.NewGuid(),
                 ManagedType = "OtherNamespace.ExampleTestSuiteB",
                 ManagedMethod = "TestB",
+                SimpleName = "TestB",
                 FullyQualifiedName = "OtherNamespace.ExampleTestSuiteB.TestB",
                 AssemblyPath = "/debug/examples.dll",
                 AttributeIndex = 0,
@@ -131,7 +135,7 @@ public class TestCaseFilterTest
                 }
             }
         };
-        var settings = new GdUnit4Settings { DisplayName = DisplayNameOptions.FullyQualifiedName };
+        var settings = new GdUnit4Settings { DisplayName = DisplayNameOptions.SimpleName };
 
         testsExamples = testDescriptors
             .Select(descriptor =>
@@ -159,6 +163,28 @@ public class TestCaseFilterTest
         Assert.AreEqual(TestCaseProperties.FullyQualifiedName, provider.Invoke("FullyQualifiedName"));
         Assert.AreEqual(TestCaseExtensions.RequireRunningGodotEngineProperty, provider.Invoke("RequireRunningGodotEngine"));
         Assert.AreEqual(TestCaseExtensions.TestCategoryProperty, provider.Invoke("TestCategory"));
+    }
+
+    [TestMethod]
+    public void BuildTestCaseUsesFullDisplayNameWhenConfigured()
+    {
+        var descriptor = new TestCaseDescriptor
+        {
+            Id = Guid.NewGuid(),
+            ManagedType = "TestNamespace.ExampleTestSuiteA",
+            ManagedMethod = "TestA",
+            FullyQualifiedName = "TestNamespace.ExampleTestSuiteA.TestA",
+            AssemblyPath = "/debug/examples.dll",
+            AttributeIndex = 0,
+            CodeFilePath = "/tests/core/ExampleTestSuiteA.cs",
+            LineNumber = 12,
+            RequireRunningGodotEngine = false
+        };
+        var settings = new GdUnit4Settings { DisplayName = DisplayNameOptions.FullyQualifiedName };
+
+        var testCase = GdUnit4TestDiscoverer.BuildTestCase(descriptor, settings);
+
+        Assert.AreEqual(descriptor.FullyQualifiedName, testCase.DisplayName);
     }
 
     [TestMethod]
