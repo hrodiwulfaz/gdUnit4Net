@@ -12,6 +12,8 @@ using Api;
 
 using Execution;
 
+using Reporting;
+
 using Environment = Environment;
 
 /// <summary>
@@ -151,13 +153,22 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
             using (var setupLock = AcquireProjectSetupLock(workingDirectory, cancellationToken))
             {
                 if (setupLock == null)
+                {
+                    ReportRuntimeSetupFailure(testSuiteNodes, eventListener, "GdUnit4 runtime setup failed while waiting for the project setup lock.");
                     return;
+                }
 
                 if (!InstallTestRunnerClasses(workingDirectory))
+                {
+                    ReportRuntimeSetupFailure(testSuiteNodes, eventListener, "GdUnit4 runtime setup failed while installing the generated test runner classes.");
                     return;
+                }
 
                 if (!ReCompileGodotProject(workingDirectory, godotBinary, compileLogFilePath, userDataDir))
+                {
+                    ReportRuntimeSetupFailure(testSuiteNodes, eventListener, "GdUnit4 runtime setup failed while compiling the Godot project.");
                     return;
+                }
             }
 
             Logger.LogInfo("======== Running GdUnit4 Godot Runtime Test Runner ========");
@@ -642,6 +653,32 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         {
             Logger.LogError($"Error running build restore: {ex.Message}");
             return false;
+        }
+    }
+
+    private void ReportRuntimeSetupFailure(List<TestSuiteNode> testSuiteNodes, ITestEventListener eventListener, string message)
+    {
+        Logger.LogError(message);
+        foreach (var testSuiteNode in testSuiteNodes)
+        {
+            var statistics = TestEvent.BuildStatistics(
+                0,
+                true,
+                testSuiteNode.Tests.Count,
+                false,
+                0,
+                false,
+                false,
+                0,
+                0);
+            var testEvent = TestEvent
+                .After(
+                    testSuiteNode.SourceFile,
+                    testSuiteNode.ManagedType,
+                    statistics,
+                    [new TestReport(ReportType.Abort, -1, message)])
+                .WithFullyQualifiedName(testSuiteNode.ManagedType);
+            eventListener.PublishEvent(testEvent);
         }
     }
 

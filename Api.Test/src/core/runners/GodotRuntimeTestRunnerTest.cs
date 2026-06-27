@@ -1,9 +1,11 @@
 ﻿namespace GdUnit4.Tests.Core.Runners;
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
+using System.Threading;
 
 using Api;
 
@@ -339,6 +341,55 @@ public class GodotRuntimeTestRunnerTest
     }
 
     [TestCase]
+    public void RunAndWaitPublishesSuiteFailureWhenRuntimeSetupFails()
+    {
+        var previousGodotBin = Environment.GetEnvironmentVariable("GODOT_BIN");
+        try
+        {
+            CreateSuccessScript();
+            Environment.SetEnvironmentVariable("GODOT_BIN", MockGodotBinPath);
+            var runner = CreateTestRunner(1000, assemblyPath: "SetupFailure.Tests.dll");
+            var testSuite = new TestSuiteNode
+            {
+                Id = Guid.NewGuid(),
+                ParentId = Guid.Empty,
+                ManagedType = "Example.Tests.SetupFailureSuite",
+                AssemblyPath = "SetupFailure.Tests.dll",
+                SourceFile = "SetupFailureSuite.cs",
+                Tests =
+                [
+                    new TestCaseNode
+                    {
+                        Id = Guid.NewGuid(),
+                        ParentId = Guid.Empty,
+                        ManagedMethod = "FailsDuringSetup",
+                        LineNumber = 12,
+                        AttributeIndex = 0,
+                        RequireRunningGodotEngine = true
+                    }
+                ]
+            };
+            var listener = new CapturingTestEventListener();
+
+            runner.RunAndWait([testSuite], listener, CancellationToken.None);
+
+            AssertThat(listener.Events.Count).IsEqual(1);
+            var setupFailureEvent = listener.Events[0];
+            AssertThat(setupFailureEvent.Type).IsEqual(EventType.SuiteAfter);
+            AssertThat(setupFailureEvent.FullyQualifiedName).IsEqual(testSuite.ManagedType);
+            AssertThat(setupFailureEvent.IsError).IsTrue();
+            AssertThat(setupFailureEvent.Reports.Count).IsEqual(1);
+            var report = setupFailureEvent.Reports.Single();
+            AssertThat(report.Type).IsEqual(ReportType.Abort);
+            AssertThat(report.Message).Contains("GdUnit4 runtime setup failed while installing the generated test runner classes.");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("GODOT_BIN", previousGodotBin);
+        }
+    }
+
+    [TestCase]
     public void InstallTestRunnerUsesConfiguredSceneDirectory()
     {
         var workingDirectory = Path.Combine(TestTempDirectory!, "working_dir_configured");
@@ -554,6 +605,18 @@ public class GodotRuntimeTestRunnerTest
 
             AssertBool(true).OverrideFailureMessage(message).IsFalse();
         }
+    }
+
+    private sealed class CapturingTestEventListener : ITestEventListener
+    {
+        public List<ITestEvent> Events { get; } = [];
+
+        public bool IsFailed { get; set; }
+
+        public int CompletedTests { get; set; }
+
+        public void PublishEvent(ITestEvent testEvent)
+            => Events.Add(testEvent);
     }
 
     #endregion
