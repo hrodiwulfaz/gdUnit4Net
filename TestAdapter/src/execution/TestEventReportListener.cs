@@ -3,6 +3,7 @@
 
 namespace GdUnit4.TestAdapter.Execution;
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Encodings.Web;
 
 using Api;
@@ -84,27 +85,7 @@ internal sealed class TestEventReportListener : ITestEventListener
                     return;
                 }
 
-                var testResult = new TestResult(testCase)
-                {
-                    DisplayName = IdeType is Ide.DotNet or Ide.Unknown ? testCase.FullyQualifiedName : testCase.DisplayName,
-                    Outcome = testEvent.AsTestOutcome(),
-                    EndTime = DateTimeOffset.Now,
-                    Duration = testEvent.ElapsedInMs
-                };
-
-                // Set dynamic driven test name (DataPointAttribute)
-                if (testEvent.DisplayName != null)
-                    testResult.DisplayName = testEvent.DisplayName;
-
-                testEvent.Reports
-                    .ToList()
-                    .ForEach(report => AddTestReport(report, testResult));
-
-                if (DetailedOutput)
-                    Framework.SendMessage(TestMessageLevel.Informational, $"TestCase: {testEvent.FullyQualifiedName} {testResult.Outcome}");
-                Framework.RecordResult(testResult);
-                Framework.RecordEnd(testCase, testResult.Outcome);
-                CompletedTests += 1;
+                RecordTestResult(testEvent, testCase);
                 break;
             }
 
@@ -129,6 +110,68 @@ internal sealed class TestEventReportListener : ITestEventListener
 
     private static bool IsEventFailed(ITestEvent e)
         => e.Reports.Count > 0;
+
+    /// <summary>
+    ///     Creates and finalizes the single terminal result of a completed test case.
+    /// </summary>
+    /// <param name="testEvent">The after test event supplying the outcome and the runtime reports.</param>
+    /// <param name="testCase">The VSTest test case the event belongs to.</param>
+    /// <remarks>
+    ///     The outcome and the reports supplied by the runtime are preserved. If adapter owned report normalization,
+    ///     IDE specific formatting or informational messaging fails, the same result is marked as failed and carries the
+    ///     adapter exception. Abandoning it would leave VSTest with a started test and no terminal result.
+    ///     Failures raised by <see cref="IFrameworkHandle" /> itself are host callback failures and propagate unchanged.
+    /// </remarks>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "A presentation failure must not remove the terminal test result")]
+    private void RecordTestResult(ITestEvent testEvent, TestCase testCase)
+    {
+        var testResult = new TestResult(testCase)
+        {
+            DisplayName = IdeType is Ide.DotNet or Ide.Unknown ? testCase.FullyQualifiedName : testCase.DisplayName,
+            Outcome = testEvent.AsTestOutcome(),
+            EndTime = DateTimeOffset.Now,
+            Duration = testEvent.ElapsedInMs
+        };
+
+        // Set dynamic driven test name (DataPointAttribute)
+        if (testEvent.DisplayName != null)
+            testResult.DisplayName = testEvent.DisplayName;
+
+        // each report is presented on its own, a failing report must not hide the remaining ones
+        var presentationFailures = new List<Exception>();
+        foreach (var report in testEvent.Reports.ToList())
+        {
+            try
+            {
+                _ = AddTestReport(report, testResult);
+            }
+            catch (Exception e)
+            {
+                presentationFailures.Add(e);
+            }
+        }
+
+        try
+        {
+            if (DetailedOutput)
+                Framework.SendMessage(TestMessageLevel.Informational, $"TestCase: {testEvent.FullyQualifiedName} {testResult.Outcome}");
+        }
+        catch (Exception e)
+        {
+            presentationFailures.Add(e);
+        }
+
+        if (presentationFailures.Count > 0)
+        {
+            testResult.Outcome = TestOutcome.Failed;
+            testResult.ErrorMessage = $"{testResult.ErrorMessage}\n{string.Join("\n", presentationFailures)}".TrimStart('\n');
+            testResult.ErrorStackTrace ??= presentationFailures[0].StackTrace;
+        }
+
+        Framework.RecordResult(testResult);
+        Framework.RecordEnd(testCase, testResult.Outcome);
+        CompletedTests += 1;
+    }
 
     private void ReportSuiteFailure(ITestEvent testEvent, string displayName)
     {
@@ -163,7 +206,6 @@ internal sealed class TestEventReportListener : ITestEventListener
         }
     }
 
-    // ReSharper disable once UnusedMethodReturnValue.Local
 #pragma warning disable IDE0072
     private TestResult AddTestReport(ITestReport report, TestResult testResult)
         => IdeDetector.Detect(Framework) switch
