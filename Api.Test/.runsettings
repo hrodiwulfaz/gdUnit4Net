@@ -8,9 +8,15 @@
         <!-- set default session timeout to 30m (1800000ms)-->
         <TestSessionTimeout>1800000</TestSessionTimeout>
         <TreatNoTestsAsError>true</TreatNoTestsAsError>
+        <!-- SceneRunnerGDScriptSceneTest drives the scene runner through GDScript backed fixtures.
+             This Godot build is compiled with module_gdscript_enabled=no, so a .gd script can not be
+             loaded at all and the fixture scenes come up without their script attached.
+             The suite is a strict subset of SceneRunnerCSharpSceneTest, which covers the same scene
+             runner behaviour against a C# scene, so excluding it loses no coverage.
+             Remove this filter if GDScript is ever enabled in the engine build. -->
+        <TestCaseFilter>FullyQualifiedName!~SceneRunnerGDScriptSceneTest</TestCaseFilter>
         <EnvironmentVariables>
-            <GODOT_BIN>D:\development\Godot_v4.3-stable_mono_win64\Godot_v4.3-stable_mono_win64.exe</GODOT_BIN>
-            <!-- <GODOT_BIN>D:\development\Godot_v4.2.1-stable_mono_win64\Godot_v4.2.1-stable_mono_win64.exe</GODOT_BIN> -->
+            <GODOT_BIN>D:\Projects\Godot\4.7.1-outpostia.2\godot.windows.editor.x86_64.mono.exe</GODOT_BIN>
         </EnvironmentVariables>
     </RunConfiguration>
 
@@ -36,6 +42,8 @@
 
     <GdUnit4>
         <!-- Additional Godot runtime parameters. These are passed to the Godot executable when running tests.-->
+        <!-- Do not add the headless flag here, the scene runner mouse tests need a real display.
+             Be aware that running them takes over the cursor of the developer machine. -->
         <Parameters>"--verbose"</Parameters>
 
         <!-- Controls the display name format of test cases in the test results.

@@ -315,12 +315,17 @@ internal sealed class SceneRunner : ISceneRunner
 
     private static Node LoadScene(string resourcePath)
     {
-        if (!ResourceLoader.Exists(resourcePath))
-            throw new FileNotFoundException($"GdUnitSceneRunner: Can't load scene by given resource path: '{resourcePath}'. The resource does not exists.");
         if (!resourcePath.EndsWith(".tscn") && !resourcePath.EndsWith(".scn") && !resourcePath.StartsWith("uid://"))
             throw new ArgumentException($"GdUnitSceneRunner: The given resource: '{resourcePath}' is not a scene.");
+        if (!ResourceLoader.Exists(resourcePath))
+            throw new FileNotFoundException($"GdUnitSceneRunner: Can't load scene by given resource path: '{resourcePath}'. The resource does not exists.");
 
-        return ((PackedScene)ResourceLoader.Load(resourcePath)).Instantiate();
+        // a resource that fails to load, or that is not a packed scene, must report the resource path
+        // instead of surfacing a NullReferenceException or an InvalidCastException from the cast
+        if (ResourceLoader.Load(resourcePath) is not PackedScene packedScene)
+            throw new InvalidOperationException($"GdUnitSceneRunner: Can't load scene by given resource path: '{resourcePath}'. The resource is not a loadable packed scene.");
+
+        return packedScene.Instantiate();
     }
 
     // ReSharper disable once UnusedMethodReturnValue.Local

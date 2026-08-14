@@ -9,7 +9,7 @@
   <!-- Godot Configuration -->
   <PropertyGroup>
     <!-- Note: Keep GodotVersion in sync with global.json msbuild-sdks.Godot.NET.Sdk -->
-    <GodotVersion>4.6.0-outpostia</GodotVersion>
+    <GodotVersion>4.7.1-outpostia.2</GodotVersion>
     <GodotNetSdkVersion>$(GodotVersion)</GodotNetSdkVersion>
   </PropertyGroup>
 

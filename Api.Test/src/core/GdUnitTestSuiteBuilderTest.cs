@@ -23,11 +23,13 @@ public class GdUnitTestSuiteBuilderTest
         => ClearTempDir();
 
     [TestCase]
+    [RequireGodotRuntime]
     public void ParseFullqualifiedClassName()
         => AssertThat(GdUnitTestSuiteBuilder.ParseFullqualifiedClassName("src/core/resources/sources/TestPerson.cs"))
             .IsEqual(new GdUnitTestSuiteBuilder.ClassDefinition("GdUnit4.Example.Test.Resources", "TestPerson"));
 
     [TestCase]
+    [RequireGodotRuntime]
     public void ParseTypeWithNamespace()
     {
         AssertObject(GdUnitTestSuiteBuilder.ParseType("src/core/resources/testsuites/mono/spaceA/TestSuite.cs")).IsEqual(typeof(TestSuite));
@@ -37,11 +39,13 @@ public class GdUnitTestSuiteBuilderTest
     }
 
     [TestCase]
+    [RequireGodotRuntime]
     public void ParseTypeWithoutNamespace()
         => AssertObject(GdUnitTestSuiteBuilder.ParseType("src/core/resources/testsuites/mono/noSpace/TestSuiteWithoutNamespace.cs"))
             .IsEqual(typeof(TestSuiteWithoutNamespace));
 
     [TestCase]
+    [RequireGodotRuntime]
     public void ParseTypeWithFileScopedNamespace()
         => AssertObject(GdUnitTestSuiteBuilder.ParseType("src/core/resources/testsuites/mono/TestSuiteWithFileScopedNamespace.cs"))
             .IsEqual(typeof(TestSuiteWithFileScopedNamespace));
