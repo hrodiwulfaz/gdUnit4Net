@@ -11,6 +11,8 @@ using Execution;
 
 using Extensions;
 
+using Hooks;
+
 using Newtonsoft.Json;
 
 /// <summary>
@@ -69,18 +71,8 @@ internal class ExecuteTestSuiteCommand : BaseCommand
                 context.IsCaptureStdOut = IsCaptureStdOut;
                 if (context.IsEngineMode)
                     _ = await GodotObjectExtensions.SyncProcessFrame;
-                await new TestSuiteExecutionStage(testSuite)
+                await new TestSuiteExecutionStage(testSuite, StdOutHookFactory.CreateStdOutHook)
                     .Execute(context)
-                    .ConfigureAwait(true);
-            }
-
-            // handle unexpected exceptions
-#pragma warning disable CA1031
-            catch (Exception e)
-#pragma warning restore CA1031
-            {
-                await Console.Error
-                    .WriteLineAsync($"Unexpected Exception: {e.Message} \nStackTrace: {e.StackTrace}")
                     .ConfigureAwait(true);
             }
             finally
@@ -94,6 +86,8 @@ internal class ExecuteTestSuiteCommand : BaseCommand
                 Payload = $"Test suite {Suite.ManagedType} executed successfully."
             };
         }
+
+        // an unexpected execution failure must reach the command boundary, it must never be reported as a successful run
 #pragma warning disable CA1031
         catch (Exception ex)
 #pragma warning restore CA1031
@@ -101,7 +95,7 @@ internal class ExecuteTestSuiteCommand : BaseCommand
             return new Response
             {
                 StatusCode = HttpStatusCode.InternalServerError,
-                Payload = JsonConvert.SerializeObject(ex)
+                Payload = ex.ToString()
             };
         }
     }

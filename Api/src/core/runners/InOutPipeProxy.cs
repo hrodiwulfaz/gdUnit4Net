@@ -133,22 +133,18 @@ internal class InOutPipeProxy<TPipe> : IAsyncDisposable
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    ///     Serializes a protocol message.
+    /// </summary>
+    /// <typeparam name="TObject">The protocol message type to serialize.</typeparam>
+    /// <param name="data">The command, event or response to serialize.</param>
+    /// <returns>The serialized protocol message.</returns>
+    /// <remarks>
+    ///     A serialization failure fails the write with the original exception. Substituting a different protocol
+    ///     type would silently change the message type the peer receives.
+    /// </remarks>
     private static string SerializeObject<TObject>(TObject data)
-    {
-        try
-        {
-            return JsonConvert.SerializeObject(data, JsonSettings);
-        }
-        catch (JsonSerializationException ex)
-        {
-            var response = new Response
-            {
-                StatusCode = HttpStatusCode.BadRequest,
-                Payload = $"Invalid command format: {ex.Message}"
-            };
-            return JsonConvert.SerializeObject(response, JsonSettings);
-        }
-    }
+        => JsonConvert.SerializeObject(data, JsonSettings);
 
     private static TObject DeserializeObject<TObject>(string json)
         => JsonConvert.DeserializeObject<TObject>(json, JsonSettings) ??

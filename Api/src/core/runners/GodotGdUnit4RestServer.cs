@@ -12,8 +12,6 @@ using Commands;
 
 using Extensions;
 
-using Newtonsoft.Json;
-
 internal sealed class GodotGdUnit4RestServer : InOutPipeProxy<NamedPipeServerStream>, ITestEventListener
 {
     private readonly SemaphoreSlim processLock = new(1, 1);
@@ -125,11 +123,11 @@ internal sealed class GodotGdUnit4RestServer : InOutPipeProxy<NamedPipeServerStr
         catch (Exception ex)
 #pragma warning restore CA1031
         {
-            Logger.LogError($"GodotGdUnit4RestApi:: Processing command failed {ex.Message}.");
+            Logger.LogError($"GodotGdUnit4RestApi:: Processing command failed.\n{ex}");
             return new Response
             {
                 StatusCode = HttpStatusCode.InternalServerError,
-                Payload = JsonConvert.SerializeObject(ex)
+                Payload = ex.ToString()
             };
         }
     }

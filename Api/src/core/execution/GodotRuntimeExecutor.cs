@@ -3,6 +3,7 @@
 
 namespace GdUnit4.Core.Execution;
 
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Pipes;
 using System.Net;
 using System.Security.Principal;
@@ -10,8 +11,6 @@ using System.Security.Principal;
 using Api;
 
 using Commands;
-
-using Newtonsoft.Json;
 
 using Reporting;
 
@@ -48,6 +47,16 @@ internal sealed class GodotRuntimeExecutor : InOutPipeProxy<NamedPipeClientStrea
         }
     }
 
+    /// <summary>
+    ///     Shuts the Godot runtime down and releases the pipe.
+    /// </summary>
+    /// <returns>A task representing the asynchronous shutdown.</returns>
+    /// <remarks>
+    ///     Delivering the terminate command to an already exiting Godot process is best effort. A broken shutdown
+    ///     pipe is neither a test result nor a transport failure of a test run, and it must not prevent the pipe
+    ///     from being disposed.
+    /// </remarks>
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "A failing shutdown handshake must not fail the test run")]
     public async Task StopAsync()
     {
         try
@@ -59,12 +68,14 @@ internal sealed class GodotRuntimeExecutor : InOutPipeProxy<NamedPipeClientStrea
             await Task
                 .Delay(100)
                 .ConfigureAwait(true);
-            await DisposeAsync().ConfigureAwait(false);
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
-            throw;
+            Logger.LogInfo($"The Godot runtime did not acknowledge the shutdown command. {e.Message}");
+        }
+        finally
+        {
+            await DisposeAsync().ConfigureAwait(false);
         }
     }
 
@@ -83,51 +94,48 @@ internal sealed class GodotRuntimeExecutor : InOutPipeProxy<NamedPipeClientStrea
 
         // read incoming data until is command response or canceled
         TestEvent? lastTestEvent = null;
-        while (!cancellationToken.IsCancellationRequested)
+        while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            object? data;
             try
             {
-                var data = await ReadInData(cancellationToken)
+                data = await ReadInData(cancellationToken)
                     .ConfigureAwait(false);
-                switch (data)
-                {
-                    case TestEvent testEvent:
-                        // save last event to be used for test cancellation report
-                        lastTestEvent = testEvent;
-                        testEventListener.PublishEvent(testEvent);
-                        break;
-                    case Response response:
-                        if (response.StatusCode != HttpStatusCode.Gone || lastTestEvent == null)
-                            return response;
-
-                        // if connection gone we report at interrupted to the actual test
-                        var testCanceledEvent = TestEvent
-                            .AfterTest(lastTestEvent.Id, lastTestEvent.ResourcePath, lastTestEvent.SuiteName, lastTestEvent.TestName)
-                            .WithStatistic(TestEvent.StatisticKey.Errors, 1)
-                            .WithReport(new TestReport(Interrupted, 0, response.Payload));
-                        testEventListener.PublishEvent(testCanceledEvent);
-                        return response;
-                    default:
-                        continue;
-                }
             }
 #pragma warning disable CA1031
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
 #pragma warning restore CA1031
             {
-                return new Response
-                {
-                    StatusCode = HttpStatusCode.InternalServerError,
-                    Payload = JsonConvert.SerializeObject(ex)
-                };
+                // a transport or deserialization failure is a local failure, it must never look like a server response
+                throw new IOException($"Failed to read the response of command '{typeof(T).Name}' from the Godot runtime pipe.", ex);
+            }
+
+            switch (data)
+            {
+                case TestEvent testEvent:
+                    // save last event to be used for test cancellation report
+                    lastTestEvent = testEvent;
+
+                    // a failure raised by the listener is a host callback failure and must propagate unchanged
+                    testEventListener.PublishEvent(testEvent);
+                    break;
+                case Response response:
+                    if (response.StatusCode != HttpStatusCode.Gone || lastTestEvent == null)
+                        return response;
+
+                    // if connection gone we report at interrupted to the actual test
+                    var testCanceledEvent = TestEvent
+                        .AfterTest(lastTestEvent.Id, lastTestEvent.ResourcePath, lastTestEvent.SuiteName, lastTestEvent.TestName)
+                        .WithStatistic(TestEvent.StatisticKey.Errors, 1)
+                        .WithReport(new TestReport(Interrupted, 0, response.Payload));
+                    testEventListener.PublishEvent(testCanceledEvent);
+                    return response;
+                default:
+                    continue;
             }
         }
-
-        return new Response
-        {
-            StatusCode = HttpStatusCode.InternalServerError,
-            Payload = string.Empty
-        };
     }
 }
 

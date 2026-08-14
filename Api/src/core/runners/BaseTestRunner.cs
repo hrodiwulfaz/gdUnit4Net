@@ -5,6 +5,7 @@ namespace GdUnit4.Core.Runners;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,8 +13,6 @@ using System.Threading.Tasks;
 using Api;
 
 using Commands;
-
-using Newtonsoft.Json;
 
 /// <summary>
 ///     Base implementation of a test runner that manages test execution lifecycle and command processing.
@@ -69,23 +68,20 @@ internal class BaseTestRunner : ITestRunner
         Task.Run(
                 async () =>
                 {
+                    var isExecutorStarted = false;
                     try
                     {
                         await Executor
                             .StartAsync()
                             .ConfigureAwait(true);
+                        isExecutorStarted = true;
                         foreach (var testSuite in testSuiteNodes)
                         {
-                            // using (var stdoutHook = testSuiteContext.IsCaptureStdOut ? StdOutHookFactory.CreateStdOutHook() : null)
                             var response = await Executor
                                 .ExecuteCommand(new ExecuteTestSuiteCommand(testSuite, Settings.CaptureStdOut, true), eventListener, token)
                                 .ConfigureAwait(true);
                             ValidateResponse(response);
                         }
-
-                        await Executor
-                            .StopAsync()
-                            .ConfigureAwait(true);
                     }
                     catch (TimeoutException)
                     {
@@ -99,7 +95,13 @@ internal class BaseTestRunner : ITestRunner
                     catch (Exception ex)
 #pragma warning restore CA1031
                     {
-                        Logger.LogError($"{ex.Message}\n{ex.StackTrace}");
+                        // log the full exception, the inner exceptions and their stacks identify the failing boundary
+                        Logger.LogError(ex.ToString());
+                    }
+                    finally
+                    {
+                        if (isExecutorStarted)
+                            await StopExecutor().ConfigureAwait(true);
                     }
                 },
                 token)
@@ -116,11 +118,37 @@ internal class BaseTestRunner : ITestRunner
             .Wait(token);
     }
 
+    /// <summary>
+    ///     Validates the response of an executed command.
+    /// </summary>
+    /// <param name="response">The response returned by the command executor.</param>
+    /// <remarks>
+    ///     Only <see cref="HttpStatusCode.OK" /> is a success. <see cref="HttpStatusCode.Gone" /> is an interruption
+    ///     of the running test run, every other status is a failure that carries the full server payload.
+    /// </remarks>
     private static void ValidateResponse(Response response)
     {
-        if (response.StatusCode != HttpStatusCode.InternalServerError)
+        if (response.StatusCode == HttpStatusCode.OK)
             return;
-        var exception = JsonConvert.DeserializeObject<Exception>(response.Payload);
-        throw new InvalidOperationException("The server returned an unexpected status code.", exception);
+
+        if (response.StatusCode == HttpStatusCode.Gone)
+            throw new OperationCanceledException($"The test run was interrupted.\n{response.Payload}");
+
+        throw new InvalidOperationException($"The server returned status code {(int)response.StatusCode} '{response.StatusCode}'.\n{response.Payload}");
+    }
+
+    [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "A failing shutdown must not replace the primary test or transport failure")]
+    private async Task StopExecutor()
+    {
+        try
+        {
+            await Executor
+                .StopAsync()
+                .ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Failed to stop the test executor.\n{ex}");
+        }
     }
 }
