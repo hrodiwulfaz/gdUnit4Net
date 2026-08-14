@@ -1,0 +1,13 @@
+; Engine configuration file.
+; Minimal Godot project for the gdUnit4Net stdout capture end to end fixture.
+
+config_version=5
+
+[application]
+
+config/name="StdOutCaptureChild"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[dotnet]
+
+project/assembly_name="StdOutCaptureChild"

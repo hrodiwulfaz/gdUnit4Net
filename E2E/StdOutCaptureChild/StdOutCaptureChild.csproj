@@ -1,0 +1,25 @@
+<Project Sdk="Godot.NET.Sdk/4.7.1-outpostia.2">
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <RootNamespace>GdUnit4.E2E.StdOutCapture</RootNamespace>
+        <AssemblyName>StdOutCaptureChild</AssemblyName>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+        <!-- Disable warning/error of invalid/incompatible GodotSharp version and the Godot ScriptPathAttributeGenerator -->
+        <NoWarn>NU1605,CS8785</NoWarn>
+        <!-- Prevent the MSTest adapter from being discovered -->
+        <VSTestTestAdapterPath>none</VSTestTestAdapterPath>
+        <TestFramework>GdUnit4</TestFramework>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- keep in sync with the root Directory.Packages.props, see E2E/Directory.Packages.props -->
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+        <!-- referenced as projects, the fixture always runs against the current fork sources -->
+        <ProjectReference Include="..\..\Api\GdUnit4Api.csproj" />
+        <ProjectReference Include="..\..\TestAdapter\GdUnit4TestAdapter.csproj" />
+    </ItemGroup>
+</Project>

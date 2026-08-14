@@ -1,0 +1,16 @@
+<Project>
+  <!--
+  The end to end fixture is intentionally kept outside the solution and outside the strict analyzer setup of the
+  root Directory.Build.props. It exists to reproduce the stdout capture and failure reporting behavior across the
+  process, protocol and adapter boundaries, not to demonstrate style compliance.
+  -->
+  <PropertyGroup>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

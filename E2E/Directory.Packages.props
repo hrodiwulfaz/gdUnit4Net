@@ -1,0 +1,14 @@
+<Project>
+  <!--
+  Opts the end to end fixture out of the repository wide central package management.
+
+  NuGet resolves the nearest Directory.Packages.props, so this file stops the root one from applying here.
+  The fixture needs its own opt out because the root file declares PackageVersion entries for the Godot
+  packages that Godot.NET.Sdk adds implicitly, which central package management rejects (NU1009).
+
+  Keep the versions in the fixture project files in sync with the root Directory.Packages.props.
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

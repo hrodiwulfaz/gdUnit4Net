@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+    <RunConfiguration>
+        <MaxCpuCount>1</MaxCpuCount>
+        <TestAdaptersPaths>.</TestAdaptersPaths>
+        <ResultsDirectory>./TestResults</ResultsDirectory>
+        <TestSessionTimeout>900000</TestSessionTimeout>
+        <TreatNoTestsAsError>true</TreatNoTestsAsError>
+    </RunConfiguration>
+
+    <LoggerRunSettings>
+        <Loggers>
+            <!-- detailed is required, the parent regression asserts on the reported stdout of passing tests -->
+            <Logger friendlyName="console" enabled="True">
+                <Configuration>
+                    <Verbosity>detailed</Verbosity>
+                </Configuration>
+            </Logger>
+            <Logger friendlyName="trx" enabled="True">
+                <Configuration>
+                    <LogFileName>test-result.trx</LogFileName>
+                </Configuration>
+            </Logger>
+        </Loggers>
+    </LoggerRunSettings>
+
+    <GdUnit4>
+        <!-- the fixture only exercises stdout capture, it never simulates input or reads a real display,
+             so the child runs headless and does not open a window on the developer machine -->
+        <Parameters>"--headless"</Parameters>
+        <DisplayName>FullyQualifiedName</DisplayName>
+        <!-- the defect under test only reproduces with the stdout capture enabled -->
+        <CaptureStdOut>true</CaptureStdOut>
+        <CompileProcessTimeout>60000</CompileProcessTimeout>
+    </GdUnit4>
+</RunSettings>
