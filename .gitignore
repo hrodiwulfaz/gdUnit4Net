@@ -10,6 +10,15 @@ nupkg/*
 TestResults/
 gdunit4_testadapter*/
 **GdUnitRunner_*.cfg
+# Resource id companions the Godot importer generates for every script. Upstream targets a Godot
+# version that predates them, so tracking them here would only add churn against upstream.
+*.cs.uid
+*.gd.uid
+# backup the Godot importer writes when it rewrites a project file
+*.csproj.old
+*.csproj.old.*
+# per-run logs and user data the test runner writes for each Godot child process
+**/tmp/gdunit-runs/
 
 # Mono-specific ignores
 .mono/
