@@ -71,6 +71,19 @@ public sealed class TestEngineSettings
     public int CompileProcessTimeout { get; init; } = 20000;
 
     /// <summary>
+    ///     Gets the maximum duration allowed for the Godot runtime to acknowledge the shutdown command in milliseconds.
+    /// </summary>
+    /// <remarks>
+    ///     Applies only to the shutdown handshake after a test run has finished, never to the run itself.
+    ///     Without a bound, a runtime that never answers leaves the test host waiting forever and the Godot process
+    ///     orphaned. After this timeout the runner falls back to terminating the process, which still grants the
+    ///     regular grace period before it is killed.
+    ///     Default value is 30000 milliseconds (30 seconds).
+    ///     Set to a higher value on heavily loaded machines that need longer to schedule the answer.
+    /// </remarks>
+    public int ShutdownTimeout { get; init; } = 30000;
+
+    /// <summary>
     ///     Gets a value indicating whether Godot compile and runtime processes write to per-runner log files.
     /// </summary>
     public bool UseUniqueLogFiles { get; init; } = true;

@@ -64,7 +64,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         TestEngineSettings settings,
         (string RunnerId, string PipeName) identity,
         string godotProjectRoot)
-        : base(new GodotRuntimeExecutor(logger, identity.PipeName), logger, settings)
+        : base(new GodotRuntimeExecutor(logger, identity.PipeName, settings.ShutdownTimeout), logger, settings)
     {
         RunnerId = identity.RunnerId;
         PipeName = identity.PipeName;
@@ -204,23 +204,16 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
                     _ = DebuggerFramework.AttachDebuggerToProcess(process);
             }
 
-            base.RunAndWait(testSuiteNodes, eventListener, cancellationToken);
-
-            _ = process.WaitForExit(2000);
-
-            // wait until the process has finished
-            var waitRetry = 0;
-            while (!process.HasExited && waitRetry++ < 10)
-                Thread.Sleep(100);
-
-            // If the process not finished until 10 retries, we kill it manually
-            if (!process.HasExited)
+            try
             {
-                Logger.LogInfo("GdUnit4 Godot Runtime Test Runner is not terminated, force process kill.");
-                process.Kill(true);
+                base.RunAndWait(testSuiteNodes, eventListener, cancellationToken);
             }
-
-            CloseProcess(process);
+            finally
+            {
+                // the started process must be terminated on every path, an abandoned runtime keeps holding
+                // file locks on the build output and blocks the next build
+                TerminateRuntime(process);
+            }
         }
     }
 
@@ -519,6 +512,33 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         using var reader = new StreamReader(stream!);
         var content = reader.ReadToEnd();
         return content.Replace("GdUnit4TestRunnerSceneTemplate", "GdUnit4TestRunnerScene", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     Terminates the Godot runtime process of a finished run.
+    /// </summary>
+    /// <param name="runtimeProcess">The Godot process started for the run.</param>
+    /// <remarks>
+    ///     The runtime is granted a grace period to exit on its own before it is killed, so a shutdown that is merely
+    ///     slow still ends cleanly.
+    /// </remarks>
+    private void TerminateRuntime(Process runtimeProcess)
+    {
+        _ = runtimeProcess.WaitForExit(2000);
+
+        // wait until the process has finished
+        var waitRetry = 0;
+        while (!runtimeProcess.HasExited && waitRetry++ < 10)
+            Thread.Sleep(100);
+
+        // If the process not finished until 10 retries, we kill it manually
+        if (!runtimeProcess.HasExited)
+        {
+            Logger.LogInfo("GdUnit4 Godot Runtime Test Runner is not terminated, force process kill.");
+            runtimeProcess.Kill(true);
+        }
+
+        CloseProcess(runtimeProcess);
     }
 
     private string ResolveArtifactRootPath(string workingDirectory)

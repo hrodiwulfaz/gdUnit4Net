@@ -28,9 +28,14 @@ using static Api.ReportType;
 /// </remarks>
 internal sealed class GodotRuntimeExecutor : InOutPipeProxy<NamedPipeClientStream>, ICommandExecutor
 {
-    public GodotRuntimeExecutor(ITestEngineLogger logger, string pipeName)
+    public GodotRuntimeExecutor(ITestEngineLogger logger, string pipeName, int shutdownTimeout)
         : base(new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous, TokenImpersonationLevel.Impersonation), logger)
-        => Logger.LogInfo($"Starting GodotGdUnit4RestClient on pipe '{pipeName}'.");
+    {
+        ShutdownTimeout = shutdownTimeout;
+        Logger.LogInfo($"Starting GodotGdUnit4RestClient on pipe '{pipeName}'.");
+    }
+
+    private int ShutdownTimeout { get; }
 
     public async Task StartAsync()
     {
@@ -55,13 +60,16 @@ internal sealed class GodotRuntimeExecutor : InOutPipeProxy<NamedPipeClientStrea
     ///     Delivering the terminate command to an already exiting Godot process is best effort. A broken shutdown
     ///     pipe is neither a test result nor a transport failure of a test run, and it must not prevent the pipe
     ///     from being disposed.
+    ///     The handshake is bound by <see cref="TestEngineSettings.ShutdownTimeout" />. A runtime that never answers
+    ///     would otherwise block here forever, which leaves the caller unable to terminate the Godot process.
     /// </remarks>
     [SuppressMessage("Design", "CA1031:Do not catch general exception types", Justification = "A failing shutdown handshake must not fail the test run")]
     public async Task StopAsync()
     {
         try
         {
-            _ = await ExecuteCommand(new TerminateGodotInstanceCommand(), new NoInteractTestEventListener(), CancellationToken.None)
+            using var shutdownToken = new CancellationTokenSource(TimeSpan.FromMilliseconds(ShutdownTimeout));
+            _ = await ExecuteCommand(new TerminateGodotInstanceCommand(), new NoInteractTestEventListener(), shutdownToken.Token)
                 .ConfigureAwait(true);
 
             // Give server time to process shutdown
@@ -133,6 +141,9 @@ internal sealed class GodotRuntimeExecutor : InOutPipeProxy<NamedPipeClientStrea
                     testEventListener.PublishEvent(testCanceledEvent);
                     return response;
                 default:
+                    // an unreadable frame on a closed pipe repeats forever, the peer is gone and no response can arrive
+                    if (!IsConnected)
+                        throw new IOException($"The Godot runtime pipe closed before the response of command '{typeof(T).Name}' arrived.");
                     continue;
             }
         }

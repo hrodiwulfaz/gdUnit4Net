@@ -21,6 +21,8 @@ using static Assertions;
 [TestSuite]
 public class GodotRuntimeExecutorTest
 {
+    private const int ShutdownTimeoutMs = 30000;
+
     private static readonly TimeSpan FrameTimeout = TimeSpan.FromSeconds(5);
 
 #pragma warning disable CA2326, CA2327
@@ -149,7 +151,7 @@ public class GodotRuntimeExecutorTest
             var pipeName = $"gdunit4-transport-{Guid.NewGuid():N}";
             var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
             var connection = server.WaitForConnectionAsync();
-            var executor = new GodotRuntimeExecutor(new NoOpTestEngineLogger(), pipeName);
+            var executor = new GodotRuntimeExecutor(new NoOpTestEngineLogger(), pipeName, ShutdownTimeoutMs);
             await executor.StartAsync();
             await connection;
             return new PipeTestHarness(server, executor);
