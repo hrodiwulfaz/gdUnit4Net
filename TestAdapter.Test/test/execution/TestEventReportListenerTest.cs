@@ -90,6 +90,31 @@ public class TestEventReportListenerTest
     }
 
     [TestMethod]
+    public void AReportWithoutAMessageDoesNotFailTheTest()
+    {
+        var testCase = CreateTestCase();
+        var framework = CreateFrameworkHandle(out var recordedResults, out var recordedEnds);
+
+        // the real framework rejects a null, empty or whitespace only message with an ArgumentException
+        _ = framework
+            .Setup(handle => handle.SendMessage(It.IsAny<TestMessageLevel>(), It.Is<string>(message => string.IsNullOrWhiteSpace(message))))
+            .Throws(new ArgumentException("The parameter cannot be null or empty.", "message"));
+
+        var listener = new TestEventReportListener(framework.Object, new[] { testCase });
+        listener.PublishEvent(new TestEventStub(EventType.TestBefore, testCase.Id));
+        listener.PublishEvent(new TestEventStub(EventType.TestAfter, testCase.Id)
+        {
+            Reports = new List<ITestReport> { new TestReportStub(ReportType.Warning, string.Empty) }
+        });
+
+        // a report that carries no message must not be forwarded to the framework and must not fail its test
+        Assert.AreEqual(1, recordedResults.Count);
+        Assert.AreEqual(TestOutcome.Passed, recordedResults[0].Outcome);
+        Assert.AreEqual(1, recordedEnds.Count);
+        Assert.AreEqual(TestOutcome.Passed, recordedEnds[0]);
+    }
+
+    [TestMethod]
     public void AFrameworkCallbackFailurePropagatesUnchanged()
     {
         var testCase = CreateTestCase();
