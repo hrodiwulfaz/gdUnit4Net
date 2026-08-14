@@ -54,6 +54,11 @@ internal interface IStdOutHook : IDisposable
     ///     <para>
     ///         This method should be thread-safe and work correctly in parallel test execution scenarios.
     ///     </para>
+    ///     <para>
+    ///         Standard output redirection is process global, so only one capture owner can be active. A second
+    ///         concurrent owner fails immediately instead of interleaving output into the wrong capture buffer.
+    ///         A failing start restores every stdout path it already changed before it propagates the failure.
+    ///     </para>
     /// </remarks>
     void StartCapture();
 
@@ -72,6 +77,11 @@ internal interface IStdOutHook : IDisposable
     ///     </para>
     ///     <para>
     ///         This method should be thread-safe and properly restore console output in all scenarios.
+    ///     </para>
+    ///     <para>
+    ///         A teardown that cannot drain its reader is an infrastructure failure and is reported by throwing.
+    ///         All process global stdout state is restored before the failure is propagated, so a failing teardown
+    ///         never leaves the process with a redirected stdout.
     ///     </para>
     /// </remarks>
     void StopCapture();

@@ -1,6 +1,7 @@
 namespace GdUnit4.Tests.Core.Hooks;
 
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 using GdUnit4.Core.Execution;
@@ -32,7 +33,7 @@ public class StdOutHookFactoryTest
     [TestCase]
     public void CreateStdHook()
     {
-        var stdOutHook = StdOutHookFactory.CreateStdOutHook();
+        using var stdOutHook = StdOutHookFactory.CreateStdOutHook();
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
             AssertObject(stdOutHook).IsInstanceOf<UnixStdOutHook>();
         if (OperatingSystem.IsWindows())
@@ -42,7 +43,7 @@ public class StdOutHookFactoryTest
     [TestCase]
     public void CaptureStdOutConsole()
     {
-        var stdOutHook = StdOutHookFactory.CreateStdOutHook();
+        using var stdOutHook = StdOutHookFactory.CreateStdOutHook();
         // it should not be captured before `StartCapture`
         Console.WriteLine("Console: Short before 'StartCapture'");
 
@@ -66,7 +67,7 @@ public class StdOutHookFactoryTest
     [TestCase]
     public async Task CaptureStdOutGodot()
     {
-        var stdOutHook = StdOutHookFactory.CreateStdOutHook();
+        using var stdOutHook = StdOutHookFactory.CreateStdOutHook();
         // it should not be captured before `StartCapture`
         GD.PrintS("Godot: Short before 'StartCapture'");
 
@@ -93,7 +94,7 @@ public class StdOutHookFactoryTest
     [TestCase]
     public async Task CaptureStdOutConsoleAndGodot()
     {
-        var stdOutHook = StdOutHookFactory.CreateStdOutHook();
+        using var stdOutHook = StdOutHookFactory.CreateStdOutHook();
 
         // it should not be captured before `StartCapture`
         Console.WriteLine("Console: Do not be captured");
@@ -129,5 +130,99 @@ public class StdOutHookFactoryTest
             // and verify before and after capture messages are not caught
             .NotContains("Console: Do not be captured")
             .NotContains("Godot: Do not be captured");
+    }
+
+    [TestCase(Timeout = 300000)]
+    public async Task RepeatedCaptureLifetimesAreIsolated()
+    {
+        const int lifetimes = 64;
+        var usedTokens = new List<string>();
+
+        // one hook serves the whole suite and is started and stopped per test case, a hook per lifetime would
+        // give every lifetime its own pipe and would not reproduce the leak at all
+        using var stdOutHook = StdOutHookFactory.CreateStdOutHook();
+
+        for (var lifetime = 0; lifetime < lifetimes; lifetime++)
+        {
+            var token = $"capture-{lifetime}-{Guid.NewGuid():N}";
+            stdOutHook.StartCapture();
+
+            if (lifetime % 4 == 0)
+            {
+                // a multiline header only payload, neither a managed nor a native writer follows it
+                Console.WriteLine($"header of {token}{Environment.NewLine}  detail line 1{Environment.NewLine}  detail line 2{Environment.NewLine}");
+            }
+            else
+            {
+                Console.WriteLine($"console line of {token}");
+                GD.PrintS($"godot line of {token}");
+            }
+
+            // need to await sync stdout from Godot engine is written
+            await ISceneRunner.SyncProcessFrame;
+            stdOutHook.StopCapture();
+
+            // the capture must be complete, the ordering between the managed and the native writer is not a contract
+            var captured = stdOutHook.GetCapturedOutput();
+            AssertThat(captured).Contains(token);
+            if (lifetime % 4 != 0)
+                AssertThat(captured).Contains($"godot line of {token}");
+
+            // a capture lifetime must never expose output of a previous lifetime
+            usedTokens.ForEach(previousToken => AssertThat(captured).NotContains(previousToken));
+            usedTokens.Add(token);
+        }
+    }
+
+    [TestCase(Timeout = 300000)]
+    public void UndrainedNativeOutputDoesNotLeakIntoTheNextCaptureLifetime()
+    {
+        const int lifetimes = 64;
+        var usedTokens = new List<string>();
+
+        // one hook serves the whole suite and is started and stopped per test case
+        using var stdOutHook = StdOutHookFactory.CreateStdOutHook();
+
+        for (var lifetime = 0; lifetime < lifetimes; lifetime++)
+        {
+            var token = $"undrained-{lifetime}-{Guid.NewGuid():N}";
+            stdOutHook.StartCapture();
+
+            // deliberately stops while the native output is still in flight, the teardown has to drain it into
+            // this lifetime instead of leaving it in the pipe for the reader of the next one
+            for (var line = 0; line < 8; line++)
+                GD.PrintS($"{token} line {line}");
+            stdOutHook.StopCapture();
+
+            var captured = stdOutHook.GetCapturedOutput();
+            usedTokens.ForEach(previousToken => AssertThat(captured).NotContains(previousToken));
+            usedTokens.Add(token);
+        }
+    }
+
+    [TestCase]
+    public void ASecondConcurrentCaptureOwnerIsRejected()
+    {
+        using var firstHook = StdOutHookFactory.CreateStdOutHook();
+        using var secondHook = StdOutHookFactory.CreateStdOutHook();
+
+        firstHook.StartCapture();
+        try
+        {
+            // stdout redirection is process global, a second owner must fail instead of interleaving the output
+            AssertThrown(() => secondHook.StartCapture())
+                .IsInstanceOf<InvalidOperationException>()
+                .StartsWithMessage("Standard output capture is already owned by");
+        }
+        finally
+        {
+            firstHook.StopCapture();
+        }
+
+        // after the first owner released the capture the second owner can take it over
+        secondHook.StartCapture();
+        Console.WriteLine("owned by the second hook");
+        secondHook.StopCapture();
+        AssertThat(secondHook.GetCapturedOutput()).Contains("owned by the second hook");
     }
 }
