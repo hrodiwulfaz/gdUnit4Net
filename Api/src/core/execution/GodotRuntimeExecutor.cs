@@ -12,6 +12,8 @@ using Api;
 
 using Commands;
 
+using Exceptions;
+
 using Reporting;
 
 using Runners;
@@ -128,6 +130,12 @@ internal sealed class GodotRuntimeExecutor : InOutPipeProxy<NamedPipeClientStrea
 
                     // a failure raised by the listener is a host callback failure and must propagate unchanged
                     testEventListener.PublishEvent(testEvent);
+                    if (testEvent.IsBatchAborted)
+                    {
+                        var message = testEvent.Reports.First(report => report.Type == Abort).Message;
+                        throw new TestBatchAbortedException(message);
+                    }
+
                     break;
                 case Response response:
                     if (response.StatusCode != HttpStatusCode.Gone || lastTestEvent == null)

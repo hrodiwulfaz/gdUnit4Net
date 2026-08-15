@@ -57,3 +57,16 @@ dotnet test E2E/StdOutCaptureChild/StdOutCaptureChild.csproj --settings E2E/StdO
 
 `StdOutCaptureRegressionTest` asserts the reported test totals. When test cases are added to or removed from the child
 project, update `ExpectedTotalWithFailure` and `ExpectedTotalWithoutFailure`.
+
+## Test-case timeout fixture
+
+`TestCaseTimeoutChild` is a controlled child project for the hard-abort watchdog. It is intentionally excluded from
+`GdUnit4Net.sln`: three batches contain deliberate hangs and must only be run as separate filtered child processes.
+
+- `AsyncHangBatch` runs pass → asynchronous hang → would-pass.
+- `SynchronousHangBatch` runs pass → synchronous hang → would-pass.
+- `LifecycleHangBatch` hangs in `BeforeTest` before its test body.
+- `PassingWatchdogBatch` contains three ordinary passing tests.
+
+Set `GDUNIT4_TIMEOUT_MARKER_DIR` to an empty directory before a hang run. The first marker must exist and the
+would-pass marker must not exist after the child exits, proving the terminated batch did not continue.

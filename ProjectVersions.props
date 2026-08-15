@@ -2,8 +2,8 @@
   <!-- GdUnit4 Component Versions -->
   <PropertyGroup>
     <GdUnitAnalyzersVersion>1.0.0</GdUnitAnalyzersVersion>
-    <GdUnitAPIVersion>5.0.0-outpostia.3</GdUnitAPIVersion>
-    <GdUnitTestAdapterVersion>3.0.0-outpostia.3</GdUnitTestAdapterVersion>
+    <GdUnitAPIVersion>5.0.0-outpostia.4</GdUnitAPIVersion>
+    <GdUnitTestAdapterVersion>3.0.0-outpostia.4</GdUnitTestAdapterVersion>
   </PropertyGroup>
 
   <!-- Godot Configuration -->

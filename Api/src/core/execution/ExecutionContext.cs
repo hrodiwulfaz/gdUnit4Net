@@ -47,6 +47,7 @@ internal sealed class ExecutionContext : IDisposable
     {
         ReportCollector = context.ReportCollector;
         context.SubExecutionContexts.Add(this);
+        TestCaseTimeout = context.TestCaseTimeout;
         TestCaseName = context.TestCaseName;
         CurrentTestCase = context.CurrentTestCase;
         MethodArguments = methodArguments;
@@ -67,6 +68,7 @@ internal sealed class ExecutionContext : IDisposable
     {
         ReportCollector = context.ReportCollector;
         context.SubExecutionContexts.Add(this);
+        TestCaseTimeout = context.TestCaseTimeout;
         CurrentTestCase = context.CurrentTestCase;
         IsSkipped = CurrentTestCase?.IsSkipped ?? false;
         CurrentIteration = CurrentTestCase?.TestCaseAttributes.Count == 1
@@ -81,6 +83,7 @@ internal sealed class ExecutionContext : IDisposable
         : this(context.TestSuite, context.EventListeners, context.ReportOrphanNodesEnabled, context.IsEngineMode)
     {
         context.SubExecutionContexts.Add(this);
+        TestCaseTimeout = context.TestCaseTimeout;
         CurrentTestCase = testCase;
         CurrentIteration = CurrentTestCase?.TestCaseAttributes.Count == 1
             ? CurrentTestCase?.TestCaseAttributes.ElementAt(0).Iterations ?? 0
@@ -96,6 +99,12 @@ internal sealed class ExecutionContext : IDisposable
     public bool IsEngineMode { get; set; }
 
     public bool IsCaptureStdOut { get; set; } = true;
+
+    /// <summary>
+    ///     Gets or sets the timeout applied to a stage that does not declare one itself.
+    ///     Defaults to <see cref="Timeout.InfiniteTimeSpan" />, so a stage runs until it completes.
+    /// </summary>
+    public TimeSpan TestCaseTimeout { get; set; } = Timeout.InfiniteTimeSpan;
 
     public bool FailureReporting { get; set; }
 
@@ -210,6 +219,45 @@ internal sealed class ExecutionContext : IDisposable
 
     public TimeSpan GetExecutionTimeout(TestCaseAttribute testAttribute) =>
         testAttribute.Timeout == -1 ? ExecutionTimeout : TimeSpan.FromMilliseconds(testAttribute.Timeout);
+
+    internal void AbortBatchForStageTimeout(string stageName, TimeSpan timeout, int lineNumber)
+    {
+        var timeoutMilliseconds = Convert.ToInt64(timeout.TotalMilliseconds);
+        var processName = IsEngineMode ? "Godot runner process" : "test-host process";
+        var message = $"""
+                      Test stage timeout:
+                        Test/case: {FullyQualifiedName}
+                        Stage: {stageName}
+                        Configured timeout: {timeoutMilliseconds}ms
+                      The current test batch was aborted and is incomplete. Remaining tests were not executed.
+                      The {processName} is being terminated. The batch will not be restarted, resumed, or retried.
+                      """;
+        var statistics = TestEvent.BuildStatistics(0, true, 1, false, 0, false, false, 0, Duration);
+        TestEvent timeoutEvent;
+        if (CurrentTestCase == null)
+        {
+            timeoutEvent = stageName.StartsWith("Before ", StringComparison.Ordinal)
+                ? TestEvent.Before(TestSuite.ResourcePath, TestSuite.Name, TestSuite.TestCaseCount, statistics, [new TestReport(ReportType.Abort, lineNumber, message)])
+                : TestEvent.After(TestSuite.ResourcePath, TestSuite.Name, statistics, [new TestReport(ReportType.Abort, lineNumber, message)]);
+        }
+        else
+        {
+            timeoutEvent = TestEvent
+                .AfterTest(
+                    CurrentTestCase.Id,
+                    TestSuite.ResourcePath,
+                    TestSuite.Name,
+                    TestCaseName,
+                    statistics,
+                    [new TestReport(ReportType.Abort, lineNumber, message)])
+                .WithDisplayName(DisplayName);
+        }
+
+        FireTestEvent(
+            timeoutEvent
+                .WithFullyQualifiedName(FullyQualifiedName)
+                .WithStatistic(TestEvent.StatisticKey.BatchAborted, true));
+    }
 
     internal void PrintDebug(string name = "")
         => Console.WriteLine($"{name} test context {TestSuite.Name} {TestCaseName} error: {IsError} failed: {IsFailed} skipped: {IsSkipped}");

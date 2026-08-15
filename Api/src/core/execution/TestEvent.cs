@@ -68,7 +68,8 @@ internal class TestEvent : ITestEvent, IEquatable<TestEvent>
         TotalCount,
         ErrorCount,
         FailedCount,
-        SkippedCount
+        SkippedCount,
+        BatchAborted
     }
 
     public Guid Id { get; set; }
@@ -110,6 +111,9 @@ internal class TestEvent : ITestEvent, IEquatable<TestEvent>
     public bool IsError => GetByKeyOrDefault(StatisticKey.Errors, false);
 
     public bool IsSuccess => !IsWarning && !IsFailed && !IsError && !IsSkipped;
+
+    [JsonIgnore]
+    public bool IsBatchAborted => GetByKeyOrDefault(StatisticKey.BatchAborted, false);
 
     public TimeSpan ElapsedInMs => TimeSpan.FromMilliseconds(GetByKeyOrDefault(StatisticKey.ElapsedTime, 0));
 

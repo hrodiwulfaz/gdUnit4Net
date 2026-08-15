@@ -37,7 +37,7 @@ internal class GdUnit4RuntimeExecutorGodotBridge
 
                         foreach (var testSuiteNode in testSuiteNodes)
                         {
-                            var response = await new ExecuteTestSuiteCommand(testSuiteNode, Settings.CaptureStdOut, true)
+                            var response = await new ExecuteTestSuiteCommand(testSuiteNode, Settings.CaptureStdOut, true, Settings.TestCaseTimeout)
                                 .Execute(testListener)
                                 .ConfigureAwait(true);
                             ValidateResponse(response);

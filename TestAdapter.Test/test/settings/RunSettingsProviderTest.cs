@@ -54,6 +54,7 @@ public class RunSettingsProviderTest
             <DisplayName>FullyQualifiedName</DisplayName>
             <CaptureStdOut>true</CaptureStdOut>
             <CompileProcessTimeout>60000</CompileProcessTimeout>
+            <TestCaseTimeout>300000</TestCaseTimeout>
             <UseUniqueLogFiles>true</UseUniqueLogFiles>
             <LogFileRoot>tmp/gdunit-runs-custom</LogFileRoot>
             <UseUniqueUserDataDir>true</UseUniqueUserDataDir>
@@ -83,6 +84,33 @@ public class RunSettingsProviderTest
         """;
 
     [TestMethod]
+    public void LoadSettingsKeepsTestCaseTimeoutDisabledWhenNotSpecified()
+    {
+        const string settingsWithoutTestCaseTimeout =
+            """
+            <GdUnit4>
+                <CaptureStdOut>true</CaptureStdOut>
+            </GdUnit4>
+            """;
+
+        var provider = new GdUnit4SettingsProvider();
+        using var stringReader = new StringReader(settingsWithoutTestCaseTimeout);
+        using var xmlReader = XmlReader.Create(stringReader);
+        provider.Load(xmlReader);
+
+        var runSettings = new Mock<IRunSettings>();
+        _ = runSettings
+            .Setup(settings => settings.GetSettings(GdUnit4Settings.RUN_SETTINGS_XML_NODE))
+            .Returns(provider);
+        var discoveryContext = new Mock<IDiscoveryContext>();
+        _ = discoveryContext.SetupGet(context => context.RunSettings).Returns(runSettings.Object);
+
+        var settings = GdUnit4SettingsProvider.LoadSettings(discoveryContext.Object);
+
+        Assert.AreEqual(-1, settings.TestCaseTimeout);
+    }
+
+    [TestMethod]
     public void LoadSettingsReadsUniqueRuntimeSettings()
     {
         var provider = new GdUnit4SettingsProvider();
@@ -103,6 +131,7 @@ public class RunSettingsProviderTest
         Assert.AreEqual(DisplayNameOptions.FullyQualifiedName, settings.DisplayName);
         Assert.IsTrue(settings.CaptureStdOut);
         Assert.AreEqual(60000, settings.CompileProcessTimeout);
+        Assert.AreEqual(300000, settings.TestCaseTimeout);
         Assert.IsTrue(settings.UseUniqueLogFiles);
         Assert.AreEqual("tmp/gdunit-runs-custom", settings.LogFileRoot);
         Assert.IsTrue(settings.UseUniqueUserDataDir);

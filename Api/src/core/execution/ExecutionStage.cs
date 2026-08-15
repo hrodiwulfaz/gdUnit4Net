@@ -12,8 +12,6 @@ using System.Text.RegularExpressions;
 
 using Exceptions;
 
-using Extensions;
-
 using Monitoring;
 
 using Reporting;
@@ -43,8 +41,6 @@ internal abstract class ExecutionStage<T> : IExecutionStage
     private bool IsAsync { get; set; }
 
     private bool IsTask { get; set; }
-
-    private int DefaultTimeout { get; } = 30000;
 
     private MethodInfo? Method { get; set; }
 
@@ -146,6 +142,21 @@ internal abstract class ExecutionStage<T> : IExecutionStage
         return stack.FrameCount > 1 ? stack.GetFrame(0)!.GetFileLineNumber() : -1;
     }
 
+    private static void StartEmergencyProcessTermination()
+    {
+        var terminationThread = new Thread(
+            () =>
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(5));
+                Process.GetCurrentProcess().Kill(true);
+            })
+        {
+            IsBackground = true,
+            Name = "GdUnit4 timeout process terminator"
+        };
+        terminationThread.Start();
+    }
+
     private void InitExecutionAttributes(string stageName, MethodInfo? method, TestStageAttribute stageAttribute)
     {
         StageName = stageName;
@@ -202,16 +213,53 @@ internal abstract class ExecutionStage<T> : IExecutionStage
 
     private async Task ExecuteStage(ExecutionContext context)
     {
-        var timeout = TimeSpan.FromMilliseconds(StageAttribute?.Timeout ?? DefaultTimeout);
-        var task = Method?.Invoke(context.TestSuite.Instance, context.MethodArguments) as Task ?? Task.CompletedTask;
-        var completedTask = await Task
-            .WhenAny(task, Task.Delay(timeout))
-            .ConfigureAwait(true);
-        if (completedTask == task)
-            await task.ConfigureAwait(true); // Propagate exceptions from the original task
-        else
-            throw new ExecutionTimeoutException($"The execution has timed out after {timeout.Humanize()}.", ExecutionLineNumber(context));
+        var declaredTimeout = StageAttribute?.Timeout ?? -1;
+        var timeout = declaredTimeout > 0
+            ? TimeSpan.FromMilliseconds(declaredTimeout)
+            : context.TestCaseTimeout;
+        if (timeout == Timeout.InfiniteTimeSpan)
+        {
+            var unboundedTask = Method?.Invoke(context.TestSuite.Instance, context.MethodArguments) as Task ?? Task.CompletedTask;
+            await unboundedTask.ConfigureAwait(true);
+            return;
+        }
+
+        var executionState = 0;
+        using var watchdog = new Timer(
+            _ =>
+            {
+                if (Interlocked.CompareExchange(ref executionState, 2, 0) != 0)
+                    return;
+
+                StartEmergencyProcessTermination();
+                try
+                {
+                    context.AbortBatchForStageTimeout(TimeoutStageName(), timeout, ExecutionLineNumber(context));
+                }
+                finally
+                {
+                    if (!context.IsEngineMode)
+                        Process.GetCurrentProcess().Kill(true);
+                }
+            },
+            null,
+            timeout,
+            Timeout.InfiniteTimeSpan);
+
+        try
+        {
+            var task = Method?.Invoke(context.TestSuite.Instance, context.MethodArguments) as Task ?? Task.CompletedTask;
+            await task.ConfigureAwait(true);
+        }
+        finally
+        {
+            if (Interlocked.CompareExchange(ref executionState, 1, 0) == 2)
+                await Task.Delay(Timeout.InfiniteTimeSpan).ConfigureAwait(true);
+        }
     }
+
+    private string TimeoutStageName()
+        => $"{typeof(T).Name.Replace("Attribute", string.Empty, StringComparison.Ordinal)} ({StageName})";
 
     private int ExecutionLineNumber(ExecutionContext context)
     {

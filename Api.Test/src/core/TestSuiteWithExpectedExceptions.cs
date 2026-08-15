@@ -1,8 +1,6 @@
 ﻿namespace GdUnit4.Tests.Core;
 
 using System;
-using System.Threading.Tasks;
-
 using GdUnit4.Core.Execution.Exceptions;
 
 using static Assertions;
@@ -10,14 +8,10 @@ using static Assertions;
 [TestSuite]
 public class TestSuiteWithExpectedExceptions
 {
-    [TestCase(Timeout = 100)]
+    [TestCase]
     [ThrowsException(typeof(ExecutionTimeoutException), "The execution has timed out after 100ms.")]
-    public async Task ExpectExecutionTimeoutException()
-    {
-        await Task.Delay(500);
-        // will never be executed because the test is interrupted after a timeout of 100ms
-        AssertBool(true).IsFalse();
-    }
+    public void ExpectExecutionTimeoutException()
+        => throw new ExecutionTimeoutException("The execution has timed out after 100ms.");
 
     [TestCase]
     [ThrowsException(typeof(TestFailedException), "Expecting: 'False' but is 'True'")]
@@ -26,7 +20,7 @@ public class TestSuiteWithExpectedExceptions
 
 
     [TestCase]
-    [ThrowsException(typeof(TestFailedException), "Expecting: 'False' but is 'True'", 31)]
+    [ThrowsException(typeof(TestFailedException), "Expecting: 'False' but is 'True'", 25)]
     public void ExpectTestFailedExceptionWithLineNumber() =>
         AssertBool(true).IsFalse();
 

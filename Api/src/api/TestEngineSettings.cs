@@ -71,6 +71,18 @@ public sealed class TestEngineSettings
     public int CompileProcessTimeout { get; init; } = 20000;
 
     /// <summary>
+    ///     Gets the maximum duration allowed for a single test stage in milliseconds.
+    /// </summary>
+    /// <remarks>
+    ///     Applies to each test case and to its <c>Before</c>, <c>After</c>, <c>BeforeTest</c> and <c>AfterTest</c>
+    ///     stages individually, never to the run as a whole. Use <see cref="SessionTimeout" /> to bound the session.
+    ///     A positive explicit <c>Timeout</c> on the test attribute always takes precedence over this value.
+    ///     Default value is -1, which disables the timeout so a stage runs until it completes.
+    ///     Set to a positive value to interrupt stages that hang.
+    /// </remarks>
+    public int TestCaseTimeout { get; init; } = -1;
+
+    /// <summary>
     ///     Gets the maximum duration allowed for the Godot runtime to acknowledge the shutdown command in milliseconds.
     /// </summary>
     /// <remarks>

@@ -10,6 +10,8 @@ using Api;
 
 using Discovery;
 
+using Execution.Exceptions;
+
 using Extensions;
 
 using Runners;
@@ -65,6 +67,7 @@ internal sealed class GdUnit4TestEngine : ITestEngine
         var tasks = new List<Task>();
         var semaphore = new SemaphoreSlim(Settings.MaxCpuCount);
         var stopwatch = new Stopwatch();
+        TestBatchAbortedException? batchAbort = null;
         stopwatch.Start();
 
         try
@@ -79,7 +82,21 @@ internal sealed class GdUnit4TestEngine : ITestEngine
                         debuggerFramework,
                         cancellationSource.Token)
                     .ContinueWith(
-                        _ => semaphore.Release(),
+                        completedTask =>
+                        {
+                            var completedBatchAbort = completedTask.Exception?
+                                .Flatten()
+                                .InnerExceptions
+                                .OfType<TestBatchAbortedException>()
+                                .FirstOrDefault();
+                            if (completedBatchAbort != null)
+                            {
+                                batchAbort = completedBatchAbort;
+                                Cancel();
+                            }
+
+                            _ = semaphore.Release();
+                        },
                         cancellationSource.Token,
                         TaskContinuationOptions.ExecuteSynchronously,
                         TaskScheduler.Default);
@@ -90,6 +107,12 @@ internal sealed class GdUnit4TestEngine : ITestEngine
         }
         catch (OperationCanceledException)
         {
+            if (batchAbort != null)
+            {
+                _ = Task.WaitAll([.. tasks], TimeSpan.FromSeconds(2));
+                return;
+            }
+
             // is running into session timeout we need to manually cancel the current test run
             if (sessionTimeoutCancellationSource.IsCancellationRequested)
             {

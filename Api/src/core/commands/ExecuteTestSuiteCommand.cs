@@ -27,11 +27,15 @@ internal class ExecuteTestSuiteCommand : BaseCommand
     /// <param name="testSuite">The test suite to execute.</param>
     /// <param name="isCaptureStdOut">Whether to capture standard output during test execution.</param>
     /// <param name="isReportOrphanNodesEnabled">Whether to report orphaned nodes after test execution.</param>
-    public ExecuteTestSuiteCommand(TestSuiteNode testSuite, bool isCaptureStdOut, bool isReportOrphanNodesEnabled)
+    /// <param name="testCaseTimeout">
+    ///     The per-stage timeout in milliseconds, or -1 to let each stage run until it completes.
+    /// </param>
+    public ExecuteTestSuiteCommand(TestSuiteNode testSuite, bool isCaptureStdOut, bool isReportOrphanNodesEnabled, int testCaseTimeout = -1)
     {
         Suite = testSuite;
         IsCaptureStdOut = isCaptureStdOut;
         IsReportOrphanNodesEnabled = isReportOrphanNodesEnabled;
+        TestCaseTimeout = testCaseTimeout;
         IsEngineMode = Suite.Tests.First().RequireRunningGodotEngine;
     }
 
@@ -52,6 +56,9 @@ internal class ExecuteTestSuiteCommand : BaseCommand
     [JsonProperty]
     private bool IsReportOrphanNodesEnabled { get; set; }
 
+    [JsonProperty]
+    private int TestCaseTimeout { get; set; } = -1;
+
     public override async Task<Response> Execute(ITestEventListener testEventListener)
     {
         try
@@ -69,6 +76,9 @@ internal class ExecuteTestSuiteCommand : BaseCommand
                     IsReportOrphanNodesEnabled,
                     IsEngineMode);
                 context.IsCaptureStdOut = IsCaptureStdOut;
+                context.TestCaseTimeout = TestCaseTimeout > 0
+                    ? TimeSpan.FromMilliseconds(TestCaseTimeout)
+                    : Timeout.InfiniteTimeSpan;
                 if (context.IsEngineMode)
                     _ = await GodotObjectExtensions.SyncProcessFrame;
                 await new TestSuiteExecutionStage(testSuite, StdOutHookFactory.CreateStdOutHook)

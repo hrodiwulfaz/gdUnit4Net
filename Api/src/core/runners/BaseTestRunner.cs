@@ -14,6 +14,8 @@ using Api;
 
 using Commands;
 
+using Execution.Exceptions;
+
 /// <summary>
 ///     Base implementation of a test runner that manages test execution lifecycle and command processing.
 /// </summary>
@@ -61,6 +63,7 @@ internal class BaseTestRunner : ITestRunner
 
     public void RunAndWait(List<TestSuiteNode> testSuiteNodes, ITestEventListener eventListener, CancellationToken cancellationToken)
     {
+        TestBatchAbortedException? batchAbort = null;
         lock (SyncLock)
             RunnerCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
@@ -78,7 +81,7 @@ internal class BaseTestRunner : ITestRunner
                         foreach (var testSuite in testSuiteNodes)
                         {
                             var response = await Executor
-                                .ExecuteCommand(new ExecuteTestSuiteCommand(testSuite, Settings.CaptureStdOut, true), eventListener, token)
+                                .ExecuteCommand(new ExecuteTestSuiteCommand(testSuite, Settings.CaptureStdOut, true, Settings.TestCaseTimeout), eventListener, token)
                                 .ConfigureAwait(true);
                             ValidateResponse(response);
                         }
@@ -90,6 +93,11 @@ internal class BaseTestRunner : ITestRunner
                     catch (OperationCanceledException)
                     {
                         Logger.LogInfo("Running tests are cancelled.");
+                    }
+                    catch (TestBatchAbortedException ex)
+                    {
+                        batchAbort = ex;
+                        AbortCurrentRun();
                     }
 #pragma warning disable CA1031
                     catch (Exception ex)
@@ -116,7 +124,12 @@ internal class BaseTestRunner : ITestRunner
                 },
                 TaskScheduler.Default)
             .Wait(token);
+
+        if (batchAbort != null)
+            throw batchAbort;
     }
+
+    public virtual void AbortCurrentRun() => Cancel();
 
     /// <summary>
     ///     Validates the response of an executed command.

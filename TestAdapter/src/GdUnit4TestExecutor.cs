@@ -110,6 +110,7 @@ public class GdUnit4TestExecutor : ITestExecutor2, IDisposable
                 ? DEFAULT_SESSION_TIMEOUT
                 : runConfiguration.TestSessionTimeout),
             CompileProcessTimeout = settings.CompileProcessTimeout,
+            TestCaseTimeout = settings.TestCaseTimeout,
             ShutdownTimeout = settings.ShutdownTimeout,
             UseUniqueLogFiles = settings.UseUniqueLogFiles,
             LogFileRoot = settings.LogFileRoot,

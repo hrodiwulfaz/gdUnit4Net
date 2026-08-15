@@ -38,6 +38,7 @@ public enum DisplayNameOptions
 ///     &lt;CaptureStdOut&gt;true&lt;/CaptureStdOut&gt;
 ///     &lt;Parameters&gt;--verbose --headless&lt;/Parameters&gt;
 ///     &lt;CompileProcessTimeout&gt;30000&lt;/CompileProcessTimeout&gt;
+///     &lt;TestCaseTimeout&gt;300000&lt;/TestCaseTimeout&gt;
 ///     &lt;UseUniqueLogFiles&gt;true&lt;/UseUniqueLogFiles&gt;
 ///     &lt;LogFileRoot&gt;tmp/gdunit-runs&lt;/LogFileRoot&gt;
 ///     &lt;UseUniqueUserDataDir&gt;false&lt;/UseUniqueUserDataDir&gt;
@@ -135,6 +136,32 @@ public class GdUnit4Settings : TestRunSettings
     /// </code>
     /// </example>
     public int CompileProcessTimeout { get; init; } = 20000;
+
+    /// <summary>
+    ///     Gets the maximum duration allowed for a single test stage in milliseconds.
+    /// </summary>
+    /// <value>
+    ///     The timeout value in milliseconds. Default is -1, which disables the timeout.
+    /// </value>
+    /// <remarks>
+    ///     <para>
+    ///         This timeout is applied to each test case and to its <c>Before</c>, <c>After</c>, <c>BeforeTest</c>
+    ///         and <c>AfterTest</c> stages individually. It never bounds the run as a whole; use the standard
+    ///         <c>RunConfiguration.TestSessionTimeout</c> for that.
+    ///     </para>
+    ///     <para>
+    ///         A positive explicit <c>Timeout</c> on the test attribute always takes precedence, so individual
+    ///         long-running tests can request a larger budget. When this setting is left at -1 and no positive
+    ///         attribute timeout is present, a stage runs until it completes, which is the historical behavior.
+    ///     </para>
+    /// </remarks>
+    /// <example>
+    ///     To interrupt any single test or setup stage that hangs for more than five minutes:
+    ///     <code>
+    /// TestCaseTimeout = 300000; // 5 minutes
+    /// </code>
+    /// </example>
+    public int TestCaseTimeout { get; init; } = -1;
 
     /// <summary>
     ///     Gets the maximum duration allowed for the Godot runtime to acknowledge the shutdown command in milliseconds.

@@ -124,12 +124,17 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
     public override void Cancel()
     {
         base.Cancel();
-        lock (ProcessLock)
-        {
-            process?.Kill(true);
-            _ = process?.WaitForExit(1000);
-            CloseProcess(process);
-        }
+        TerminateRunningProcess();
+    }
+
+    public override void AbortCurrentRun()
+    {
+        var runtimeProcess = process;
+        if (runtimeProcess == null || runtimeProcess.HasExited)
+            return;
+
+        Logger.LogError("Terminating the Godot runtime process because the current test batch was aborted.");
+        TerminateRunningProcess();
     }
 
     public new void RunAndWait(List<TestSuiteNode> testSuiteNodes, ITestEventListener eventListener, CancellationToken cancellationToken)
@@ -539,6 +544,16 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         }
 
         CloseProcess(runtimeProcess);
+    }
+
+    private void TerminateRunningProcess()
+    {
+        var runtimeProcess = process;
+        if (runtimeProcess == null || runtimeProcess.HasExited)
+            return;
+
+        runtimeProcess.Kill(true);
+        _ = runtimeProcess.WaitForExit(1000);
     }
 
     private string ResolveArtifactRootPath(string workingDirectory)
