@@ -1,3 +1,9 @@
+## Outpostia fork
+
+The `5.0.0-outpostia` branch contains Outpostia's runtime, adapter, and Godot
+compatibility changes. See the [Outpostia fork changelog](FORK_CHANGELOG.md) for
+the package-by-package changes and their rationale.
+
 <h2 align="center">The Unit Testing Framework in C# for Godot</h2>
 <p align="center">This version of GdUnit4.api is based on Godot <strong>v4.4.stable.mono.official [4c311cbee]</strong> (master branch)</p>
 
