@@ -8,6 +8,42 @@ Base: gdUnit4Net `v5.0.0` (`39f836558cbfbd10e8038effb0ac6a4a71ca1629`)
 
 The API and adapter revisions are released together from the same source commit.
 
+## Outpostia.5
+
+Date: 2026-09-28
+
+Source: `7357f5ff3fe6211d882d64a38fca7a7c94b27aa6`
+
+Packages:
+
+- `gdUnit4.api` `5.0.0-outpostia.5`
+- `gdUnit4.test.adapter` `3.0.0-outpostia.5`
+
+Compatibility baseline: Godot `4.7.1-outpostia.2`
+
+- `GDUNIT-ADAPTER-003` derived the outcome of synthetic `[Before]`/`[After]`
+  suite rows from the stage's own reports instead of the recursive suite
+  statistics. A harmless stage warning, such as orphan nodes, next to one real
+  failure no longer turns every test of the class red; failure, terminated,
+  interrupted and abort reports, including stage timeouts, still fail the rows
+  (`e00172e`).
+- `GDUNIT-RUNTIME-003` added runner-folder retention: before project setup each
+  runner deletes older `<LogFileRoot>/<runner-id>/` folders, keeping the newest
+  `RunnerRetentionCount` (default 150, 0 disables), the current runner's folder
+  and folders of still running test hosts (`b28af7c`).
+- `GDUNIT-INPUT-001` stopped `SceneRunner` from warping the OS cursor for
+  simulated mouse events; the runner tracks the simulated mouse position
+  internally and reports it from `GetMousePosition`/`GetGlobalMousePosition`
+  (`194646b`).
+- `GDUNIT-BUILD-002` removed null suppressions that newer SDK analyzers report
+  as unnecessary, so the warnings-as-errors build passes on current SDKs
+  (`e3c9b52`).
+
+| Package | SHA-256 |
+| --- | --- |
+| `gdUnit4.api.5.0.0-outpostia.5.nupkg` | `d749cb242862d47ff98dccb4f49e11802f0757f7d63dfd0ec505e30849dab23a` |
+| `gdUnit4.test.adapter.3.0.0-outpostia.5.nupkg` | `4b0da9b60b8fb11a6201f0dbb626c2cd6318b0ccdbb1271a70f7a624ebb57ec3` |
+
 ## Outpostia.4
 
 Date: 2026-08-15
