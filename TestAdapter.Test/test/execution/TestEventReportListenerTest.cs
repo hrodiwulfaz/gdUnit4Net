@@ -20,6 +20,7 @@ public class TestEventReportListenerTest
 {
     private const string STDOUT_PAYLOAD = "capture-heavy-stdout-payload";
     private const string ASSERTION_MESSAGE = "Expecting to be equal but is not";
+    private const string SUITE_NAME = "Example.Tests.CaptureSuite";
 
     [TestMethod]
     public void AFailingStdoutPresentationStillRecordsOneTerminalResult()
@@ -132,6 +133,90 @@ public class TestEventReportListenerTest
         Assert.AreEqual(0, listener.CompletedTests);
     }
 
+    [TestMethod]
+    public void ASuiteAfterWarningNextToAFailedChildReportsPassedRows()
+    {
+        var suiteTests = CreateSuiteTestCases();
+        var framework = CreateFrameworkHandle(out var recordedResults, out var recordedEnds);
+
+        var listener = new TestEventReportListener(framework.Object, suiteTests);
+
+        // the suite statistics are recursive and fail for one failed child, the own orphan report is only a warning
+        listener.PublishEvent(new TestEventStub(EventType.SuiteAfter, Guid.NewGuid())
+        {
+            FullyQualifiedName = SUITE_NAME,
+            IsFailed = true,
+            Reports = new List<ITestReport>
+            {
+                new TestReportStub(ReportType.Orphan, "Found 1 possible orphan nodes"),
+                new TestReportStub(ReportType.Warning, "suite warning")
+            }
+        });
+
+        Assert.AreEqual(suiteTests.Length, recordedResults.Count);
+        Assert.IsTrue(recordedResults.All(result => result.DisplayName!.StartsWith("[After].", StringComparison.Ordinal)));
+        Assert.IsTrue(recordedResults.All(result => result.Outcome == TestOutcome.Passed));
+        Assert.IsTrue(recordedEnds.All(outcome => outcome == TestOutcome.Passed));
+    }
+
+    [TestMethod]
+    public void ASuiteAfterFailureReportsFailedRows()
+    {
+        var suiteTests = CreateSuiteTestCases();
+        var framework = CreateFrameworkHandle(out var recordedResults, out var recordedEnds);
+
+        var listener = new TestEventReportListener(framework.Object, suiteTests);
+        listener.PublishEvent(new TestEventStub(EventType.SuiteAfter, Guid.NewGuid())
+        {
+            FullyQualifiedName = SUITE_NAME,
+            IsFailed = true,
+            Reports = new List<ITestReport> { new TestReportStub(ReportType.Failure, ASSERTION_MESSAGE) }
+        });
+
+        Assert.AreEqual(suiteTests.Length, recordedResults.Count);
+        Assert.IsTrue(recordedResults.All(result => result.Outcome == TestOutcome.Failed));
+        Assert.AreEqual(suiteTests.Length, recordedEnds.Count(outcome => outcome == TestOutcome.Failed));
+    }
+
+    [TestMethod]
+    public void ASuiteAfterAbortReportsFailedRows()
+    {
+        var suiteTests = CreateSuiteTestCases();
+        var framework = CreateFrameworkHandle(out var recordedResults, out var recordedEnds);
+
+        var listener = new TestEventReportListener(framework.Object, suiteTests);
+
+        // a stage timeout arrives as an abort report on the suite after event
+        listener.PublishEvent(new TestEventStub(EventType.SuiteAfter, Guid.NewGuid())
+        {
+            FullyQualifiedName = SUITE_NAME,
+            IsError = true,
+            Reports = new List<ITestReport> { new TestReportStub(ReportType.Abort, "stage timed out") }
+        });
+
+        Assert.AreEqual(suiteTests.Length, recordedResults.Count);
+        Assert.IsTrue(recordedResults.All(result => result.Outcome == TestOutcome.Failed));
+        Assert.AreEqual(suiteTests.Length, recordedEnds.Count(outcome => outcome == TestOutcome.Failed));
+    }
+
+    [TestMethod]
+    public void ASuiteAfterWithoutReportsRecordsNoRows()
+    {
+        var suiteTests = CreateSuiteTestCases();
+        var framework = CreateFrameworkHandle(out var recordedResults, out var recordedEnds);
+
+        var listener = new TestEventReportListener(framework.Object, suiteTests);
+        listener.PublishEvent(new TestEventStub(EventType.SuiteAfter, Guid.NewGuid())
+        {
+            FullyQualifiedName = SUITE_NAME,
+            IsFailed = true
+        });
+
+        Assert.AreEqual(0, recordedResults.Count);
+        Assert.AreEqual(0, recordedEnds.Count);
+        framework.Verify(handle => handle.RecordStart(It.IsAny<TestCase>()), Times.Never);
+    }
+
     private static Mock<IFrameworkHandle> CreateFrameworkHandle(out List<TestResult> recordedResults, out List<TestOutcome> recordedEnds)
     {
         var results = new List<TestResult>();
@@ -150,15 +235,21 @@ public class TestEventReportListenerTest
     }
 
     private static TestCase CreateTestCase()
+        => CreateTestCase("TestA");
+
+    private static TestCase[] CreateSuiteTestCases()
+        => [CreateTestCase("TestA"), CreateTestCase("TestB"), CreateTestCase("TestC")];
+
+    private static TestCase CreateTestCase(string methodName)
     {
-        var testCase = new TestCase("Example.Tests.CaptureSuite.TestA", new Uri(GdUnit4TestExecutor.EXECUTOR_URI), "ExampleProject.dll")
+        var testCase = new TestCase($"{SUITE_NAME}.{methodName}", new Uri(GdUnit4TestExecutor.EXECUTOR_URI), "ExampleProject.dll")
         {
             CodeFilePath = "Tests/CaptureSuite.cs",
-            DisplayName = "TestA",
+            DisplayName = methodName,
             LineNumber = 10
         };
-        testCase.SetPropertyValue(TestCaseExtensions.ManagedTypeProperty, "Example.Tests.CaptureSuite");
-        testCase.SetPropertyValue(TestCaseExtensions.ManagedMethodProperty, "TestA");
+        testCase.SetPropertyValue(TestCaseExtensions.ManagedTypeProperty, SUITE_NAME);
+        testCase.SetPropertyValue(TestCaseExtensions.ManagedMethodProperty, methodName);
         testCase.SetPropertyValue(TestCaseExtensions.ManagedMethodAttributeIndexProperty, 0);
         testCase.SetPropertyValue(TestCaseExtensions.RequireRunningGodotEngineProperty, true);
         return testCase;

@@ -112,6 +112,18 @@ internal sealed class TestEventReportListener : ITestEventListener
         => e.Reports.Count > 0;
 
     /// <summary>
+    ///     Resolves the outcome of the synthetic rows reported for a suite stage from the stage's own reports.
+    /// </summary>
+    /// <param name="testEvent">The suite before or after event carrying the stage reports.</param>
+    /// <returns>Failed when any own report is an error or failure, otherwise Passed.</returns>
+    /// <remarks>
+    ///     The event statistics are recursive and already fail when any child test failed. Using them would mark every
+    ///     test of the suite as failed for a harmless stage warning, such as orphan nodes, next to one real failure.
+    /// </remarks>
+    private static TestOutcome AsSuiteReportsOutcome(ITestEvent testEvent)
+        => testEvent.Reports.Any(report => report.IsError || report.IsFailure) ? TestOutcome.Failed : TestOutcome.Passed;
+
+    /// <summary>
     ///     Creates and finalizes the single terminal result of a completed test case.
     /// </summary>
     /// <param name="testEvent">The after test event supplying the outcome and the runtime reports.</param>
@@ -185,7 +197,7 @@ internal sealed class TestEventReportListener : ITestEventListener
                     var testResult = new TestResult(testCase)
                     {
                         DisplayName = $"{displayName}.{testCase.DisplayName}",
-                        Outcome = testEvent.AsTestOutcome(),
+                        Outcome = AsSuiteReportsOutcome(testEvent),
                         EndTime = DateTimeOffset.Now
                     };
 
