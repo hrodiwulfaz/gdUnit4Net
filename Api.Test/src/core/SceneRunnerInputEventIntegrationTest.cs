@@ -31,8 +31,6 @@ public sealed class SceneRunnerInputEventIntegrationTest
         sceneRunner = ISceneRunner.Load("res://src/core/resources/scenes/TestSceneCSharp.tscn", true);
         AssertInitialMouseState();
         AssertInitialKeyState();
-        // we need to maximize the view, a minimized view cannot handle mouse events see (https://github.com/godotengine/godot/issues/73461)
-        sceneRunner.MaximizeView();
     }
 
     private void AssertInitialMouseState()
@@ -57,7 +55,8 @@ public sealed class SceneRunnerInputEventIntegrationTest
         }
     }
 
-    private Vector2 ActualMousePos() => sceneRunner.Scene().GetViewport().GetMousePosition();
+    // the runner never moves the OS cursor, the root viewport mouse position still reads the real cursor
+    private Vector2 ActualMousePos() => sceneRunner.GetMousePosition();
 
     // [TestCase]
     public void TestSpy()
@@ -265,6 +264,7 @@ public sealed class SceneRunnerInputEventIntegrationTest
         await ISceneRunner.SyncProcessFrame;
 
         AssertThat(ActualMousePos()).IsEqual(new Vector2(100, 100));
+        AssertThat(sceneRunner.GetGlobalMousePosition()).IsEqual(new Vector2(100, 100));
 
         var mouseEvent = new InputEventMouseMotion
         {
@@ -279,6 +279,7 @@ public sealed class SceneRunnerInputEventIntegrationTest
         await ISceneRunner.SyncProcessFrame;
 
         AssertThat(ActualMousePos()).IsEqual(new Vector2(800, 400));
+        AssertThat(sceneRunner.GetGlobalMousePosition()).IsEqual(new Vector2(800, 400));
 
         mouseEvent = new InputEventMouseMotion
         {
@@ -293,6 +294,7 @@ public sealed class SceneRunnerInputEventIntegrationTest
         await ISceneRunner.SyncProcessFrame;
 
         AssertThat(ActualMousePos()).IsEqual(new Vector2(100, 100));
+        AssertThat(sceneRunner.GetGlobalMousePosition()).IsEqual(new Vector2(100, 100));
 
         mouseEvent = new InputEventMouseMotion
         {

@@ -130,7 +130,7 @@ internal sealed class SceneRunner : ISceneRunner
         var inputEvent = new InputEventMouseMotion
         {
             Position = position,
-            GlobalPosition = GetGlobalMousePosition()
+            GlobalPosition = position
         };
         ApplyInputModifiers(inputEvent);
         return HandleInputEvent(inputEvent);
@@ -143,8 +143,12 @@ internal sealed class SceneRunner : ISceneRunner
         return currentScene.GetViewport().GetMousePosition();
     }
 
-    public Vector2 GetGlobalMousePosition() =>
-        SceneTree.Root.GetMousePosition();
+    public Vector2 GetGlobalMousePosition()
+    {
+        if (LastInputEvent is InputEventMouse me)
+            return me.GlobalPosition == Vector2.Zero ? me.Position : me.GlobalPosition;
+        return SceneTree.Root.GetMousePosition();
+    }
 
     public ISceneRunner SimulateMouseMove(Vector2 position)
     {
@@ -407,8 +411,6 @@ internal sealed class SceneRunner : ISceneRunner
     /// </summary>
     private SceneRunner HandleInputEvent(InputEvent inputEvent)
     {
-        if (inputEvent is InputEventMouse mouseEvent)
-            Input.WarpMouse(mouseEvent.Position);
         Input.ParseInputEvent(inputEvent);
         if (inputEvent is InputEventAction actionEvent)
             _ = HandleActionEvent(actionEvent);

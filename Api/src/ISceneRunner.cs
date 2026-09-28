@@ -143,20 +143,24 @@ public interface ISceneRunner : IDisposable
     ISceneRunner SimulateMouseButtonRelease(MouseButton button);
 
     /// <summary>
-    ///     Sets the mouse cursor to the given position relative to the viewport.
+    ///     Sets the simulated mouse position relative to the viewport.
     /// </summary>
+    /// <remarks>
+    ///     The real OS cursor is never moved; the position is only tracked by the runner and delivered as input event.
+    /// </remarks>
     /// <param name="position">The absolute mouse position.</param>
     /// <returns>SceneRunner.</returns>
     ISceneRunner SetMousePos(Vector2 position);
 
     /// <summary>
-    ///     Gets the current mouse position of the current viewport.
+    ///     Gets the position of the last simulated mouse event, or the viewport mouse position when none was simulated yet.
     /// </summary>
     /// <returns>Vector2.</returns>
     Vector2 GetMousePosition();
 
     /// <summary>
-    ///     Gets the current global mouse position of the current window.
+    ///     Gets the global position of the last simulated mouse event, or its viewport position when no global position was
+    ///     set. The real cursor position of the current window is only returned when no mouse event was simulated yet.
     /// </summary>
     /// <returns>Vector2.</returns>
     Vector2 GetGlobalMousePosition();

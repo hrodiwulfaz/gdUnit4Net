@@ -186,8 +186,6 @@ public sealed class SceneRunnerCSharpSceneTest
     [TestCase(Description = "Example to test a scene with do a color cycle on box one each 500ms", Timeout = 4000)]
     public async Task RunSceneColorCycle()
     {
-        sceneRunner.MaximizeView();
-
         var box1 = sceneRunner.GetProperty<ColorRect>("Box1")!;
         // verify initial color
         AssertObject(box1.Color).IsEqual(Colors.White);
@@ -246,7 +244,6 @@ public sealed class SceneRunnerCSharpSceneTest
     [TestCase(Description = "Example to simulate mouse pressed on buttons", Timeout = 20000)]
     public async Task RunSceneSimulateMouseEvents()
     {
-        sceneRunner.MaximizeView();
         await sceneRunner.AwaitInputProcessed();
 
         var box1 = sceneRunner.GetProperty<ColorRect>("Box1")!;
