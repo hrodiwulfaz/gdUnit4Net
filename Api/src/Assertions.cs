@@ -397,7 +397,7 @@ public static class Assertions
                                    null))
                               ?? throw new InvalidOperationException($"No suitable constructor found for {assertType.Name}");
 
-            var instance = constructor.Invoke([current!]);
+            var instance = constructor.Invoke([current]);
             return instance;
         }
 
@@ -420,7 +420,7 @@ public static class Assertions
                                   null)
                               ?? throw new InvalidOperationException($"No suitable constructor found for {assertType.Name}");
 
-            var instance = constructor.Invoke([current!]);
+            var instance = constructor.Invoke([current]);
             return instance;
         }
 
