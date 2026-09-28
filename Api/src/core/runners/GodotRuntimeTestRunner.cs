@@ -3,10 +3,13 @@
 
 namespace GdUnit4.Core.Runners;
 
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 
 using Api;
 
@@ -28,7 +31,7 @@ using Environment = Environment;
     "StyleCop.CSharp.OrderingRules",
     "SA1204:Static elements should appear before instance elements",
     Justification = "Static helpers are colocated with the runner operations they support.")]
-internal sealed class GodotRuntimeTestRunner : BaseTestRunner
+internal sealed partial class GodotRuntimeTestRunner : BaseTestRunner
 {
     /// <summary>
     ///     Directory name for temporary test runner files.
@@ -162,6 +165,9 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
                     ReportRuntimeSetupFailure(testSuiteNodes, eventListener, "GdUnit4 runtime setup failed while waiting for the project setup lock.");
                     return;
                 }
+
+                if (settings.RunnerRetentionCount > 0 && (settings.UseUniqueLogFiles || settings.UseUniqueUserDataDir))
+                    PruneRunnerFolders(ResolveArtifactRootPath(workingDirectory), settings.RunnerRetentionCount);
 
                 if (!InstallTestRunnerClasses(workingDirectory))
                 {
@@ -373,6 +379,58 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
         return Path.GetFullPath(userDataDirectory);
     }
 
+    /// <summary>
+    ///     Deletes old per-runner artifact folders under the artifact root, keeping the newest ones.
+    /// </summary>
+    /// <param name="artifactRootPath">The artifact root holding the per-runner folders.</param>
+    /// <param name="retentionCount">The number of newest runner folders to keep; 0 or less disables pruning.</param>
+    /// <remarks>
+    ///     Only direct subdirectories named like a runner id are considered. Folders are ordered by creation time, newest first.
+    ///     The folder of this runner and folders whose test host process is still running are never deleted. A folder that
+    ///     cannot be deleted is logged and skipped, pruning never fails the test run.
+    /// </remarks>
+    internal void PruneRunnerFolders(string artifactRootPath, int retentionCount)
+    {
+        if (retentionCount <= 0 || !Directory.Exists(artifactRootPath))
+            return;
+
+        List<DirectoryInfo> runnerFolders;
+        try
+        {
+            runnerFolders = [.. new DirectoryInfo(artifactRootPath)
+                .EnumerateDirectories()
+                .Where(folder => RunnerFolderNamePattern().IsMatch(folder.Name))
+                .OrderByDescending(folder => folder.CreationTimeUtc)];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            Logger.LogWarning($"Unable to list GdUnit4 runner folders under {artifactRootPath}: {e.Message}");
+            return;
+        }
+
+        var deleted = 0;
+        var failed = 0;
+        foreach (var folder in runnerFolders.Skip(retentionCount))
+        {
+            if (folder.Name == RunnerId || IsRunnerProcessAlive(folder.Name))
+                continue;
+
+            try
+            {
+                Directory.Delete(folder.FullName, true);
+                deleted++;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                failed++;
+                Logger.LogWarning($"Unable to delete GdUnit4 runner folder {folder.FullName}: {e.Message}");
+            }
+        }
+
+        if (deleted > 0 || failed > 0)
+            Logger.LogInfo($"Pruned GdUnit4 runner folders under {artifactRootPath}: deleted {deleted}, failed {failed}, kept {runnerFolders.Count - deleted}.");
+    }
+
     internal static string BuildCompileGodotArguments(string godotProjectRoot, string? logFilePath = null, string? userDataDir = null)
     {
         var arguments = new StringBuilder($"--path {QuoteArgument(Path.GetFullPath(godotProjectRoot))} -e --headless --quit-after 1000 --verbose");
@@ -565,6 +623,27 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
             ? logFileRoot
             : Path.Combine(workingDirectory, logFileRoot);
         return Path.GetFullPath(rootPath);
+    }
+
+    private static bool IsRunnerProcessAlive(string runnerFolderName)
+    {
+        var match = RunnerFolderNamePattern().Match(runnerFolderName);
+        if (!int.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var processId))
+            return false;
+
+        try
+        {
+            using var runnerProcess = Process.GetProcessById(processId);
+            return !runnerProcess.HasExited;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+        {
+            return false;
+        }
+        catch (Win32Exception)
+        {
+            return true;
+        }
     }
 
     private void LogRunnerConfiguration(string? compileLogFilePath, string? runtimeLogFilePath, string? userDataDir)
@@ -785,4 +864,7 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
                 process = null;
         }
     }
+
+    [GeneratedRegex(@"^.+-(\d+)-[0-9a-f]{32}$", RegexOptions.CultureInvariant)]
+    private static partial Regex RunnerFolderNamePattern();
 }

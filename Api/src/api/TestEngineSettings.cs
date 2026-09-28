@@ -106,6 +106,17 @@ public sealed class TestEngineSettings
     public string LogFileRoot { get; init; } = "tmp/gdunit-runs";
 
     /// <summary>
+    ///     Gets the number of newest per-runner artifact folders kept under <see cref="LogFileRoot" />.
+    /// </summary>
+    /// <remarks>
+    ///     Before a runner sets up the Godot project it deletes older runner folders under <see cref="LogFileRoot" />, keeping the
+    ///     newest N. Folders of the current runner and of still running test hosts are never deleted. 0 disables cleanup, and
+    ///     negative values are treated as 0. For long investigations, copy out the folders you need, or disable cleanup for one
+    ///     run with <c>dotnet test ... -- GdUnit4.RunnerRetentionCount=0</c>.
+    /// </remarks>
+    public int RunnerRetentionCount { get; init; } = 150;
+
+    /// <summary>
     ///     Gets a value indicating whether Godot compile and runtime processes use a per-runner user data directory.
     /// </summary>
     public bool UseUniqueUserDataDir { get; init; } = true;

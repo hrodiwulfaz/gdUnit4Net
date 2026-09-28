@@ -114,6 +114,7 @@ public class GdUnit4TestExecutor : ITestExecutor2, IDisposable
             ShutdownTimeout = settings.ShutdownTimeout,
             UseUniqueLogFiles = settings.UseUniqueLogFiles,
             LogFileRoot = settings.LogFileRoot,
+            RunnerRetentionCount = settings.RunnerRetentionCount,
             UseUniqueUserDataDir = settings.UseUniqueUserDataDir,
             RunnerSceneDirectory = settings.RunnerSceneDirectory,
             GodotProjectPath = settings.GodotProjectPath ?? string.Empty

@@ -41,6 +41,7 @@ public enum DisplayNameOptions
 ///     &lt;TestCaseTimeout&gt;300000&lt;/TestCaseTimeout&gt;
 ///     &lt;UseUniqueLogFiles&gt;true&lt;/UseUniqueLogFiles&gt;
 ///     &lt;LogFileRoot&gt;tmp/gdunit-runs&lt;/LogFileRoot&gt;
+///     &lt;RunnerRetentionCount&gt;150&lt;/RunnerRetentionCount&gt;
 ///     &lt;UseUniqueUserDataDir&gt;false&lt;/UseUniqueUserDataDir&gt;
 ///     &lt;RunnerSceneDirectory&gt;Data/Testing/Generated/GdUnit4&lt;/RunnerSceneDirectory&gt;
 ///     &lt;GodotProjectPath&gt;D:\Projects\MyGame&lt;/GodotProjectPath&gt;
@@ -190,6 +191,17 @@ public class GdUnit4Settings : TestRunSettings
     ///     Gets the root directory used for per-runner runtime artifacts when unique log files are enabled.
     /// </summary>
     public string LogFileRoot { get; init; } = "tmp/gdunit-runs";
+
+    /// <summary>
+    ///     Gets the number of newest per-runner artifact folders kept under <see cref="LogFileRoot" />.
+    /// </summary>
+    /// <remarks>
+    ///     Before a runner sets up the Godot project it deletes older runner folders under <see cref="LogFileRoot" />, keeping the
+    ///     newest N. Folders of the current runner and of still running test hosts are never deleted. 0 disables cleanup, and
+    ///     negative values are treated as 0. For long investigations, copy out the folders you need, or disable cleanup for one
+    ///     run with <c>dotnet test ... -- GdUnit4.RunnerRetentionCount=0</c>.
+    /// </remarks>
+    public int RunnerRetentionCount { get; init; } = 150;
 
     /// <summary>
     ///     Gets a value indicating whether each runner should use its own Godot user data directory.

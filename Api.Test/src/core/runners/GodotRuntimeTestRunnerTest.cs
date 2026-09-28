@@ -409,8 +409,161 @@ public class GodotRuntimeTestRunnerTest
         AssertThat(File.Exists(defaultRunnerPath)).OverrideFailureMessage($"Runner file should not exist at {defaultRunnerPath}").IsFalse();
     }
 
+    [TestCase]
+    public void PruneRunnerFoldersKeepsNewestAndDeletesTheRest()
+    {
+        var root = CreateRunnerRoot();
+        var deadPid = FindExitedProcessId();
+        var folders = Enumerable.Range(0, 5)
+            .Select(age => CreateRunnerFolder(root, deadPid, DateTime.UtcNow.AddHours(-age)))
+            .ToList();
+
+        CreateTestRunner(1000).PruneRunnerFolders(root, 2);
+
+        AssertThat(Directory.Exists(folders[0])).IsTrue();
+        AssertThat(Directory.Exists(folders[1])).IsTrue();
+        AssertThat(folders.Skip(2).Any(Directory.Exists)).OverrideFailureMessage("older runner folders should be deleted").IsFalse();
+        LoggerMock.Verify(logger => logger.LogInfo(It.Is<string>(message => message.Contains("deleted 3, failed 0, kept 2"))), Times.Once);
+    }
+
+    [TestCase]
+    public void PruneRunnerFoldersNeverDeletesTheCurrentRunnerFolder()
+    {
+        var root = CreateRunnerRoot();
+        var runner = CreateTestRunner(1000);
+        var deadPid = FindExitedProcessId();
+        var newest = CreateRunnerFolder(root, deadPid, DateTime.UtcNow);
+        var current = Path.Combine(root, runner.RunnerId);
+        Directory.CreateDirectory(current);
+        Directory.SetCreationTimeUtc(current, DateTime.UtcNow.AddDays(-10));
+        var old = CreateRunnerFolder(root, deadPid, DateTime.UtcNow.AddDays(-5));
+
+        runner.PruneRunnerFolders(root, 1);
+
+        AssertThat(Directory.Exists(newest)).IsTrue();
+        AssertThat(Directory.Exists(current)).OverrideFailureMessage("the current runner folder must be kept").IsTrue();
+        AssertThat(Directory.Exists(old)).IsFalse();
+    }
+
+    [TestCase]
+    public void PruneRunnerFoldersNeverDeletesFoldersOfRunningProcesses()
+    {
+        var root = CreateRunnerRoot();
+        var deadPid = FindExitedProcessId();
+        var newest = CreateRunnerFolder(root, deadPid, DateTime.UtcNow);
+        var live = CreateRunnerFolder(root, Environment.ProcessId, DateTime.UtcNow.AddDays(-10));
+        var old = CreateRunnerFolder(root, deadPid, DateTime.UtcNow.AddDays(-5));
+
+        CreateTestRunner(1000).PruneRunnerFolders(root, 1);
+
+        AssertThat(Directory.Exists(newest)).IsTrue();
+        AssertThat(Directory.Exists(live)).OverrideFailureMessage("a folder of a running process must be kept").IsTrue();
+        AssertThat(Directory.Exists(old)).IsFalse();
+    }
+
+    [TestCase]
+    public void PruneRunnerFoldersIgnoresNonRunnerEntries()
+    {
+        var root = CreateRunnerRoot();
+        var deadPid = FindExitedProcessId();
+        var runnerFolder = CreateRunnerFolder(root, deadPid, DateTime.UtcNow.AddDays(-1));
+        var otherNames = new[] { "reports", $"outpostia-tests-{deadPid}-not-a-guid", $"outpostia-tests-{deadPid}-{Guid.NewGuid():N}".ToUpperInvariant(), $"{deadPid}-{Guid.NewGuid():N}" }
+            .Select(name => Path.Combine(root, name))
+            .ToList();
+        otherNames.ForEach(path =>
+        {
+            Directory.CreateDirectory(path);
+            Directory.SetCreationTimeUtc(path, DateTime.UtcNow.AddDays(-30));
+        });
+        var runnerNamedFile = Path.Combine(root, $"outpostia-tests-{deadPid}-{Guid.NewGuid():N}");
+        File.WriteAllText(runnerNamedFile, "not a folder");
+        var lockFile = Path.Combine(root, "gdunit4-setup.lock");
+        File.WriteAllText(lockFile, string.Empty);
+
+        CreateTestRunner(1000).PruneRunnerFolders(root, 1);
+
+        AssertThat(Directory.Exists(runnerFolder)).IsTrue();
+        AssertThat(otherNames.All(Directory.Exists)).OverrideFailureMessage("folders with other names must not be touched").IsTrue();
+        AssertThat(File.Exists(runnerNamedFile)).IsTrue();
+        AssertThat(File.Exists(lockFile)).IsTrue();
+    }
+
+    [TestCase]
+    public void PruneRunnerFoldersIsDisabledByZeroRetention()
+    {
+        var root = CreateRunnerRoot();
+        var deadPid = FindExitedProcessId();
+        var folders = Enumerable.Range(0, 3)
+            .Select(age => CreateRunnerFolder(root, deadPid, DateTime.UtcNow.AddHours(-age)))
+            .ToList();
+
+        var runner = CreateTestRunner(1000);
+        runner.PruneRunnerFolders(root, 0);
+        runner.PruneRunnerFolders(root, -1);
+
+        AssertThat(folders.All(Directory.Exists)).OverrideFailureMessage("no runner folder may be deleted when retention is disabled").IsTrue();
+        LoggerMock.Verify(logger => logger.LogInfo(It.Is<string>(message => message.Contains("Pruned GdUnit4 runner folders"))), Times.Never);
+    }
+
+    [TestCase]
+    public void PruneRunnerFoldersSkipsUndeletableFoldersAndContinues()
+    {
+        var root = CreateRunnerRoot();
+        var deadPid = FindExitedProcessId();
+        var newest = CreateRunnerFolder(root, deadPid, DateTime.UtcNow);
+        var locked = CreateRunnerFolder(root, deadPid, DateTime.UtcNow.AddDays(-1));
+        var old = CreateRunnerFolder(root, deadPid, DateTime.UtcNow.AddDays(-2));
+
+        using (new FileStream(Path.Combine(locked, "runtime.log"), FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+            CreateTestRunner(1000).PruneRunnerFolders(root, 1);
+
+        AssertThat(Directory.Exists(newest)).IsTrue();
+        AssertThat(Directory.Exists(locked)).OverrideFailureMessage("a folder that cannot be deleted is skipped").IsTrue();
+        AssertThat(Directory.Exists(old)).OverrideFailureMessage("pruning continues after a failed delete").IsFalse();
+        LoggerMock.Verify(logger => logger.LogWarning(It.Is<string>(message => message.Contains(locked))), Times.Once);
+        LoggerMock.Verify(logger => logger.LogInfo(It.Is<string>(message => message.Contains("deleted 1, failed 1, kept 2"))), Times.Once);
+    }
+
 
     #region Helper Methods
+
+    private string CreateRunnerRoot()
+    {
+        var root = Path.Combine(TestTempDirectory!, $"gdunit-runs-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        return root;
+    }
+
+    private static string CreateRunnerFolder(string root, int processId, DateTime creationTimeUtc)
+    {
+        var folder = Path.Combine(root, $"outpostia-tests-{processId}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "compile.log"), "log");
+        Directory.SetCreationTimeUtc(folder, creationTimeUtc);
+        return folder;
+    }
+
+    /// <summary>
+    ///     Finds a process id that does not belong to a running process
+    /// </summary>
+    private static int FindExitedProcessId()
+    {
+        for (var processId = 999_996; processId > 0; processId -= 4)
+        {
+            try
+            {
+                using var process = System.Diagnostics.Process.GetProcessById(processId);
+                if (process.HasExited)
+                    return processId;
+            }
+            catch (ArgumentException)
+            {
+                return processId;
+            }
+        }
+
+        throw new InvalidOperationException("No unused process id found");
+    }
 
     /// <summary>
     ///     Create a script that succeeds quickly
