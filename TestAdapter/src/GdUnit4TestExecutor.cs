@@ -8,6 +8,8 @@ using System.Xml;
 
 using Api;
 
+using Core.Runners;
+
 using Discovery;
 
 using Execution;
@@ -117,7 +119,9 @@ public class GdUnit4TestExecutor : ITestExecutor2, IDisposable
             RunnerRetentionCount = settings.RunnerRetentionCount,
             UseUniqueUserDataDir = settings.UseUniqueUserDataDir,
             RunnerSceneDirectory = settings.RunnerSceneDirectory,
-            GodotProjectPath = settings.GodotProjectPath ?? string.Empty
+            GodotProjectPath = settings.GodotProjectPath ?? string.Empty,
+            ProjectSetupCache = settings.ProjectSetupCache,
+            TestAdapterIdentity = ProjectSetupFingerprint.DescribeAssembly(typeof(GdUnit4TestExecutor).Assembly)
         };
 
         testEngine = ITestEngine.GetInstance(engineSettings, Log);

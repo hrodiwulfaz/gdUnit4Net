@@ -28,6 +28,9 @@
         <PackageReference Include="MSTest.TestFramework" Version="3.9.3" ExcludeAssets="build;analyzers;native" />
         <ProjectReference Include="..\Api\GdUnit4Api.csproj" />
         <ProjectReference Include="..\TestAdapter\GdUnit4TestAdapter.csproj" />
+        <!-- Editor stand-in and standalone setup owner of the project setup tests, started as its own process -->
+        <ProjectReference Include="..\Api.Test.Host\GdUnit4ApiTestHost.csproj" ReferenceOutputAssembly="false" />
+        <AssemblyMetadata Include="GdUnit4ApiTestHostDirectory" Value="$(MSBuildThisFileDirectory)..\Api.Test.Host\bin\$(Configuration)\net9.0" />
         <PackageReference Include="gdUnit4.analyzers" Version="$(GdUnitAnalyzersVersion)">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

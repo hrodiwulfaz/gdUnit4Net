@@ -130,4 +130,21 @@ public sealed class TestEngineSettings
     ///     Gets the Godot project root or project.godot path used when runtime tests run outside the project directory.
     /// </summary>
     public string GodotProjectPath { get; init; } = string.Empty;
+
+    /// <summary>
+    ///     Gets a value indicating whether a validated Godot editor preparation of the project is reused between runners.
+    /// </summary>
+    /// <remarks>
+    ///     When enabled, the first runner that prepares the Godot project publishes a content stamp below
+    ///     <c>.godot/gdunit4/</c>. Later runners validate that stamp under the same project-local setup lock and skip the
+    ///     editor pass when every recorded input and generated output still matches. Every runner still starts its own
+    ///     Godot runtime. Projects with editor plugins, GDExtensions or other unsupported scan graphs are always prepared.
+    ///     Default value is false. Disable it for one run with <c>dotnet test ... -- GdUnit4.ProjectSetupCache=false</c>.
+    /// </remarks>
+    public bool ProjectSetupCache { get; init; }
+
+    /// <summary>
+    ///     Gets the module identity of the test adapter that hosts the engine, recorded in the project setup stamp.
+    /// </summary>
+    internal string TestAdapterIdentity { get; init; } = string.Empty;
 }

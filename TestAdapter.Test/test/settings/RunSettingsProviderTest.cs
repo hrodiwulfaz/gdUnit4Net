@@ -137,6 +137,30 @@ public class RunSettingsProviderTest
         Assert.IsTrue(settings.UseUniqueUserDataDir);
         Assert.AreEqual("Data/Testing/Generated/GdUnit4", settings.RunnerSceneDirectory);
         Assert.AreEqual("D:\\Projects\\Outpostia", settings.GodotProjectPath);
+        Assert.IsFalse(settings.ProjectSetupCache, "ProjectSetupCache stays disabled unless the runsettings enable it");
+    }
+
+    [TestMethod]
+    [DataRow("true", true)]
+    [DataRow("false", false)]
+    public void LoadSettingsReadsProjectSetupCache(string configuredValue, bool expected)
+    {
+        // `dotnet test -- GdUnit4.ProjectSetupCache=false` reaches the adapter as this element
+        var provider = new GdUnit4SettingsProvider();
+        using var stringReader = new StringReader($"<GdUnit4><ProjectSetupCache>{configuredValue}</ProjectSetupCache></GdUnit4>");
+        using var xmlReader = XmlReader.Create(stringReader);
+        provider.Load(xmlReader);
+
+        var runSettings = new Mock<IRunSettings>();
+        _ = runSettings
+            .Setup(settings => settings.GetSettings(GdUnit4Settings.RUN_SETTINGS_XML_NODE))
+            .Returns(provider);
+        var discoveryContext = new Mock<IDiscoveryContext>();
+        _ = discoveryContext.SetupGet(context => context.RunSettings).Returns(runSettings.Object);
+
+        var settings = GdUnit4SettingsProvider.LoadSettings(discoveryContext.Object);
+
+        Assert.AreEqual(expected, settings.ProjectSetupCache);
     }
 
     [TestMethod]

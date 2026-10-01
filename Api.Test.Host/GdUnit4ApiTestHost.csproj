@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Title>gdUnit4Api test host</Title>
+    <Description>
+      Process-level test double used by the gdUnit4Api project setup tests. It stands in for the Godot editor
+      preparation and owns one project setup in its own process. It is never packaged.
+    </Description>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <AssemblyName>GdUnit4ApiTestHost</AssemblyName>
+    <RootNamespace>GdUnit4.Tests.Host</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- warning CS8785, prevent Godot ScriptPathAttributeGenerator errors-->
+    <IsGodotToolsProject>true</IsGodotToolsProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Api\GdUnit4Api.csproj"/>
+  </ItemGroup>
+</Project>

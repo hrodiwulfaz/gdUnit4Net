@@ -134,6 +134,7 @@ Create a `.runsettings` file in your solution root:
 | `DisplayName`           | Test name format in results                       | `SimpleName` | `FullyQualifiedName`     |
 | `CaptureStdOut`         | Capture test output in results                    | `false`      | `true`                   |
 | `CompileProcessTimeout` | Godot compilation timeout (ms)                    | `20000`      | `30000`                  |
+| `ProjectSetupCache`     | Reuse a validated Godot editor preparation        | `false`      | `true`                   |
 
 ### Using .runsettings
 

@@ -45,6 +45,7 @@ public enum DisplayNameOptions
 ///     &lt;UseUniqueUserDataDir&gt;false&lt;/UseUniqueUserDataDir&gt;
 ///     &lt;RunnerSceneDirectory&gt;Data/Testing/Generated/GdUnit4&lt;/RunnerSceneDirectory&gt;
 ///     &lt;GodotProjectPath&gt;D:\Projects\MyGame&lt;/GodotProjectPath&gt;
+///     &lt;ProjectSetupCache&gt;true&lt;/ProjectSetupCache&gt;
 ///   &lt;/GdUnit4&gt;
 /// &lt;/RunSettings&gt;
 /// </code>
@@ -218,6 +219,19 @@ public class GdUnit4Settings : TestRunSettings
     ///     Relative values are resolved from the test assembly directory because VSTest exposes runsettings XML but not the runsettings file path to adapters.
     /// </summary>
     public string? GodotProjectPath { get; init; }
+
+    /// <summary>
+    ///     Gets a value indicating whether a validated Godot editor preparation of the project is reused between runners.
+    /// </summary>
+    /// <value>
+    ///     <c>true</c> to skip the editor pass when the project-local setup stamp below <c>.godot/gdunit4/</c> still matches
+    ///     every recorded input and generated output; <c>false</c> to prepare the project on every run. Default is <c>false</c>.
+    /// </value>
+    /// <remarks>
+    ///     Every runner still starts its own Godot runtime. Disable the cache for one run with
+    ///     <c>dotnet test ... -- GdUnit4.ProjectSetupCache=false</c>.
+    /// </remarks>
+    public bool ProjectSetupCache { get; init; }
 
     /// <summary>
     ///     Converts the current settings instance to an XML element for inclusion in .runsettings files.

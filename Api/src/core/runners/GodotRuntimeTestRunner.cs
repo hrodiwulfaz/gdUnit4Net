@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -44,9 +45,11 @@ internal sealed partial class GodotRuntimeTestRunner : BaseTestRunner
     internal const string TEST_RUNNER_SCENE_FILE_NAME = "GdUnit4TestRunnerScene.cs";
 
     private const string DEFAULT_LOG_FILE_ROOT = "tmp/gdunit-runs";
+    private const int EDITOR_REAP_TIMEOUT_MS = 5000;
 
     private readonly TestEngineSettings settings;
     private Process? process;
+    private volatile string? editorIncompleteReason;
 
     /// <summary>
     ///     Initializes a new instance of the <see cref="GodotRuntimeTestRunner" /> class.
@@ -158,28 +161,11 @@ internal sealed partial class GodotRuntimeTestRunner : BaseTestRunner
             LogRunnerConfiguration(compileLogFilePath, runtimeLogFilePath, userDataDir);
 
             var godotBinary = GodotBin;
-            using (var setupLock = AcquireProjectSetupLock(workingDirectory, cancellationToken))
+            var setupFailure = SetUpGodotProject(workingDirectory, godotBinary, compileLogFilePath, userDataDir, cancellationToken);
+            if (setupFailure != null)
             {
-                if (setupLock == null)
-                {
-                    ReportRuntimeSetupFailure(testSuiteNodes, eventListener, "GdUnit4 runtime setup failed while waiting for the project setup lock.");
-                    return;
-                }
-
-                if (settings.RunnerRetentionCount > 0 && (settings.UseUniqueLogFiles || settings.UseUniqueUserDataDir))
-                    PruneRunnerFolders(ResolveArtifactRootPath(workingDirectory), settings.RunnerRetentionCount);
-
-                if (!InstallTestRunnerClasses(workingDirectory))
-                {
-                    ReportRuntimeSetupFailure(testSuiteNodes, eventListener, "GdUnit4 runtime setup failed while installing the generated test runner classes.");
-                    return;
-                }
-
-                if (!ReCompileGodotProject(workingDirectory, godotBinary, compileLogFilePath, userDataDir))
-                {
-                    ReportRuntimeSetupFailure(testSuiteNodes, eventListener, "GdUnit4 runtime setup failed while compiling the Godot project.");
-                    return;
-                }
+                ReportRuntimeSetupFailure(testSuiteNodes, eventListener, setupFailure);
+                return;
             }
 
             Logger.LogInfo("======== Running GdUnit4 Godot Runtime Test Runner ========");
@@ -228,6 +214,73 @@ internal sealed partial class GodotRuntimeTestRunner : BaseTestRunner
         }
     }
 
+    /// <summary>
+    ///     Prepares the Godot project for a runtime under the project-local setup lock.
+    /// </summary>
+    /// <param name="workingDirectory">The Godot project root.</param>
+    /// <param name="godotBinary">The Godot executable.</param>
+    /// <param name="compileLogFilePath">The per-runner editor log file, or null.</param>
+    /// <param name="userDataDir">The per-runner user data directory, or null.</param>
+    /// <param name="cancellationToken">Cancels the lock wait and a running editor preparation.</param>
+    /// <returns>Null when the project is prepared; otherwise the setup failure to report.</returns>
+    /// <remarks>
+    ///     The generated runner is always installed first. With <see cref="TestEngineSettings.ProjectSetupCache" /> the
+    ///     editor preparation is skipped when the project-local success stamp still matches the captured project state;
+    ///     a fresh stamp is published only after one successful preparation left the authored inputs untouched and the
+    ///     generated outputs stable. Nothing but that editor preparation is ever reused.
+    /// </remarks>
+    internal string? SetUpGodotProject(string workingDirectory, string godotBinary, string? compileLogFilePath, string? userDataDir, CancellationToken cancellationToken)
+    {
+        var setupCache = new ProjectSetupCache(Logger, workingDirectory);
+        var setupStopwatch = Stopwatch.StartNew();
+        var lockTimeout = TimeSpan.FromMilliseconds(Math.Max(settings.SessionTimeout, 600000));
+        using var setupLock = setupCache.AcquireLock(lockTimeout, cancellationToken);
+        if (setupLock == null)
+            return "GdUnit4 runtime setup failed while waiting for the project setup lock.";
+
+        var lockWait = setupStopwatch.Elapsed;
+        if (!setupCache.RecoverInterruptedSetup(TimeSpan.FromMilliseconds(settings.CompileProcessTimeout), cancellationToken))
+            return "GdUnit4 runtime setup failed while recovering an interrupted project setup.";
+
+        var artifactRootPath = ResolveArtifactRootPath(workingDirectory);
+        if (settings.RunnerRetentionCount > 0 && (settings.UseUniqueLogFiles || settings.UseUniqueUserDataDir) && !IsSameOrNestedPath(setupCache.StateDirectory, artifactRootPath))
+            PruneRunnerFolders(artifactRootPath, settings.RunnerRetentionCount);
+
+        if (!InstallTestRunnerClasses(workingDirectory))
+            return "GdUnit4 runtime setup failed while installing the generated test runner classes.";
+
+        var validationStopwatch = Stopwatch.StartNew();
+        ProjectSetupFingerprint? fingerprint = null;
+        if (!settings.ProjectSetupCache)
+            Logger.LogInfo("GdUnit4 project setup required: ProjectSetupCache is disabled");
+        else
+        {
+            fingerprint = CaptureProjectSetupFingerprint(workingDirectory, godotBinary);
+            var missReason = fingerprint.IneligibilityReason;
+            if (missReason == null && setupCache.IsCurrent(fingerprint, out missReason))
+            {
+                Logger.LogInfo(
+                    $"GdUnit4 project setup is up to date, reusing the prepared project: lock wait {lockWait.TotalMilliseconds:0}ms, validation {validationStopwatch.ElapsedMilliseconds}ms, total {setupStopwatch.ElapsedMilliseconds}ms");
+                return null;
+            }
+
+            Logger.LogInfo($"GdUnit4 project setup required: {missReason}");
+        }
+
+        var validation = validationStopwatch.Elapsed;
+        var preparationStopwatch = Stopwatch.StartNew();
+        if (!ReCompileGodotProject(workingDirectory, godotBinary, compileLogFilePath, userDataDir, cancellationToken))
+            return "GdUnit4 runtime setup failed while compiling the Godot project.";
+
+        var preparation = preparationStopwatch.Elapsed;
+        if (fingerprint != null)
+            PublishProjectSetupStamp(setupCache, fingerprint, workingDirectory, godotBinary);
+
+        Logger.LogInfo(
+            $"GdUnit4 project setup completed: lock wait {lockWait.TotalMilliseconds:0}ms, validation {validation.TotalMilliseconds:0}ms, preparation {preparation.TotalMilliseconds:0}ms, total {setupStopwatch.ElapsedMilliseconds}ms");
+        return null;
+    }
+
     internal bool InstallTestRunnerClasses(string workingDirectory, bool reCompile = true)
     {
         var destinationFolderPath = ResolveRunnerSceneDirectoryPath(workingDirectory);
@@ -253,9 +306,29 @@ internal sealed partial class GodotRuntimeTestRunner : BaseTestRunner
         return isSuccess;
     }
 
-    internal bool ReCompileGodotProject(string workingDirectory, string godotBinary, string? logFilePath = null, string? userDataDir = null)
+    /// <summary>
+    ///     Runs the headless Godot editor preparation of the project. Must be called while holding the setup lock.
+    /// </summary>
+    /// <param name="workingDirectory">The Godot project root.</param>
+    /// <param name="godotBinary">The Godot executable.</param>
+    /// <param name="logFilePath">The editor log file, or null.</param>
+    /// <param name="userDataDir">The editor user data directory, or null.</param>
+    /// <param name="cancellationToken">Cancels the running editor.</param>
+    /// <returns>True when the editor exited successfully within the compile timeout.</returns>
+    /// <remarks>
+    ///     Every preparation first removes the project setup stamp and journals the launch, then journals the identity
+    ///     of the started editor. The journal is removed only once the editor is verified gone, so a later runner never
+    ///     starts a second editor next to an orphan of this one.
+    /// </remarks>
+    internal bool ReCompileGodotProject(string workingDirectory, string godotBinary, string? logFilePath = null, string? userDataDir = null, CancellationToken cancellationToken = default)
     {
+        var setupCache = new ProjectSetupCache(Logger, workingDirectory);
+        editorIncompleteReason = null;
+        if (!setupCache.BeginPreparation())
+            return false;
+
         using var compileProcess = new Process();
+        var isEditorStarted = false;
         try
         {
             // recompile the project
@@ -283,6 +356,8 @@ internal sealed partial class GodotRuntimeTestRunner : BaseTestRunner
                 Logger.LogInfo($".. {message}");
             };
             compileProcess.ErrorDataReceived += StdErrorProcessor;
+            compileProcess.OutputDataReceived += ObserveEditorOutput;
+            compileProcess.ErrorDataReceived += ObserveEditorOutput;
             compileProcess.Exited += ExitHandler("Rebuild Godot Project");
             if (!compileProcess.Start())
             {
@@ -290,18 +365,29 @@ internal sealed partial class GodotRuntimeTestRunner : BaseTestRunner
                 return false;
             }
 
+            isEditorStarted = true;
             compileProcess.BeginErrorReadLine();
             compileProcess.BeginOutputReadLine();
-            _ = compileProcess.WaitForExit(100);
+            if (!setupCache.RecordEditorProcess(compileProcess))
+            {
+                compileProcess.Kill(true);
+                return false;
+            }
 
             // The compile project can take a while, and we need to wait until it finishes
-            // Calculate how many iterations we need based on the compile process timeout
             const int checkIntervalMs = 100; // Check every 100ms
-            var maxRetries = settings.CompileProcessTimeout / checkIntervalMs;
+            var compileStopwatch = Stopwatch.StartNew();
+            while (!compileProcess.HasExited
+                   && compileStopwatch.ElapsedMilliseconds < settings.CompileProcessTimeout
+                   && !cancellationToken.IsCancellationRequested)
+                _ = compileProcess.WaitForExit(checkIntervalMs);
 
-            var waitRetry = 0;
-            while (!compileProcess.HasExited && waitRetry++ < maxRetries)
-                Thread.Sleep(checkIntervalMs);
+            if (!compileProcess.HasExited && cancellationToken.IsCancellationRequested)
+            {
+                Logger.LogWarning("Godot project compilation was canceled, terminating the Godot editor process.");
+                compileProcess.Kill(true);
+                return false;
+            }
 
             // If the process has not finished within the timeout period, we kill it manually
             if (!compileProcess.HasExited)
@@ -331,8 +417,11 @@ internal sealed partial class GodotRuntimeTestRunner : BaseTestRunner
                      """);
 
                 compileProcess.Kill(true);
+                return false;
             }
 
+            if (!DrainEditorOutput(compileProcess))
+                editorIncompleteReason ??= "the Godot editor output could not be read completely";
             return compileProcess.ExitCode == 0;
         }
 #pragma warning disable CA1031
@@ -345,6 +434,11 @@ internal sealed partial class GodotRuntimeTestRunner : BaseTestRunner
         }
         finally
         {
+            // the journal keeps naming an editor that could not be verified gone, the next runner then waits for it
+            if (!isEditorStarted || HasEditorExited(compileProcess))
+                setupCache.EndPreparation();
+            compileProcess.OutputDataReceived -= ObserveEditorOutput;
+            compileProcess.ErrorDataReceived -= ObserveEditorOutput;
             CloseProcess(compileProcess);
         }
     }
@@ -658,38 +752,96 @@ internal sealed partial class GodotRuntimeTestRunner : BaseTestRunner
             Logger.LogInfo($"GdUnit4 user data directory: {userDataDir}");
     }
 
-    private FileStream? AcquireProjectSetupLock(string workingDirectory, CancellationToken cancellationToken)
-    {
-        var lockDirectory = ResolveArtifactRootPath(workingDirectory);
-        _ = Directory.CreateDirectory(lockDirectory);
-        var lockPath = Path.Combine(lockDirectory, "gdunit4-setup.lock");
-        var timeout = TimeSpan.FromMilliseconds(Math.Max(settings.SessionTimeout, 600000));
-        var stopwatch = Stopwatch.StartNew();
-        Logger.LogInfo($"Waiting for GdUnit4 project setup lock: {lockPath}");
+    private ProjectSetupFingerprint CaptureProjectSetupFingerprint(string workingDirectory, string godotBinary)
+        => ProjectSetupFingerprint.Capture(
+            workingDirectory,
+            godotBinary,
+            Path.Combine(ResolveRunnerSceneDirectoryPath(workingDirectory), TEST_RUNNER_SCENE_FILE_NAME),
+            new Dictionary<string, string>
+            {
+                ["gdunit.adapter"] = settings.TestAdapterIdentity,
+                ["preparation.command"] = BuildCompileGodotArguments(workingDirectory),
+                ["runner.resource"] = BuildRunnerSceneResourcePath(),
+                ["runner.template"] = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(BuildTestRunnerSceneContent())))
+            });
 
-        while (!cancellationToken.IsCancellationRequested && stopwatch.Elapsed < timeout)
+    /// <summary>
+    ///     Publishes the project setup stamp when the finished preparation is provably reusable.
+    /// </summary>
+    /// <param name="setupCache">The project-local setup state.</param>
+    /// <param name="before">The fingerprint captured before the preparation.</param>
+    /// <param name="workingDirectory">The Godot project root.</param>
+    /// <param name="godotBinary">The Godot executable.</param>
+    /// <remarks>
+    ///     The authored inputs must equal the pre-setup capture in two captures taken after the editor is gone, and the
+    ///     generated outputs must be equal in both. Anything else leaves the project prepared but unstamped.
+    /// </remarks>
+    private void PublishProjectSetupStamp(ProjectSetupCache setupCache, ProjectSetupFingerprint before, string workingDirectory, string godotBinary)
+    {
+        var reason = before.IneligibilityReason ?? editorIncompleteReason;
+        if (reason == null)
         {
-            try
-            {
-                var lockStream = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-                Logger.LogInfo($"Acquired GdUnit4 project setup lock: {lockPath}");
-                return lockStream;
-            }
-            catch (IOException)
-            {
-                Thread.Sleep(250);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                Thread.Sleep(250);
-            }
+            var prepared = CaptureProjectSetupFingerprint(workingDirectory, godotBinary);
+            var stable = CaptureProjectSetupFingerprint(workingDirectory, godotBinary);
+            var changedInputs = ProjectSetupFingerprint.Difference(before.Inputs, prepared.Inputs)
+                .Union(ProjectSetupFingerprint.Difference(before.Inputs, stable.Inputs), StringComparer.Ordinal)
+                .ToList();
+            var unstableOutputs = ProjectSetupFingerprint.Difference(prepared.Outputs, stable.Outputs);
+            reason = prepared.IneligibilityReason ?? stable.IneligibilityReason;
+            if (reason == null && changedInputs.Count > 0)
+                reason = $"authored inputs changed during the preparation: {string.Join(", ", changedInputs)}";
+            if (reason == null && unstableOutputs.Count > 0)
+                reason = $"generated outputs are not stable: {string.Join(", ", unstableOutputs)}";
+            reason ??= stable.MissingOutputReason;
+            if (reason == null && !setupCache.Publish(stable))
+                reason = "the setup stamp could not be written";
         }
 
-        if (cancellationToken.IsCancellationRequested)
-            Logger.LogWarning($"Canceled while waiting for GdUnit4 project setup lock: {lockPath}");
+        if (reason == null)
+            Logger.LogInfo($"Published GdUnit4 project setup stamp: {setupCache.StampPath}");
         else
-            Logger.LogError($"Timed out waiting for GdUnit4 project setup lock: {lockPath}");
-        return null;
+            Logger.LogInfo($"GdUnit4 project setup stamp not published: {reason}");
+    }
+
+    private void ObserveEditorOutput(object sender, DataReceivedEventArgs args)
+    {
+        // the editor still exits with code 0 when its --quit-after budget ends before the file system scan and import
+        if (args.Data?.Contains("Scan thread aborted", StringComparison.Ordinal) == true)
+            editorIncompleteReason = "the Godot editor quit before its file system scan finished";
+    }
+
+    private static bool DrainEditorOutput(Process editor)
+    {
+        // the timed WaitForExit overloads do not wait for the redirected streams of an exited process
+        using var timeout = new CancellationTokenSource(EDITOR_REAP_TIMEOUT_MS);
+        try
+        {
+            editor.WaitForExitAsync(timeout.Token).GetAwaiter().GetResult();
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasEditorExited(Process editor)
+    {
+        try
+        {
+            return editor.WaitForExit(EDITOR_REAP_TIMEOUT_MS);
+        }
+        catch (Exception e) when (e is InvalidOperationException or Win32Exception)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsSameOrNestedPath(string parentDirectory, string path)
+    {
+        var parent = Path.GetFullPath(parentDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var candidate = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        return candidate.StartsWith(parent, StringComparison.OrdinalIgnoreCase);
     }
 
     private bool RunDotnetBuild(string workingDirectory)
