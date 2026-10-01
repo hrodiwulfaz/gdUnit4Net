@@ -8,6 +8,100 @@ Base: gdUnit4Net `v5.0.0` (`39f836558cbfbd10e8038effb0ac6a4a71ca1629`)
 
 The API and adapter revisions are released together from the same source commit.
 
+## Outpostia.6
+
+Date: 2026-10-01
+
+Source: `960a8f79cbe584b694c4b73a475defb9270fdae7`
+
+Packages:
+
+- `gdUnit4.api` `5.0.0-outpostia.6`
+- `gdUnit4.test.adapter` `3.0.0-outpostia.6`
+
+Compatibility baseline: Godot `4.7.1-outpostia.2`
+
+- `GDUNIT-RUNTIME-004` moved the project setup coordination below the Godot
+  project data directory, so every runner of one worktree shares it whatever
+  its `LogFileRoot`:
+
+  ```text
+  .godot/gdunit4/setup.lock               exclusive-handle lock, the file name alone means nothing
+  .godot/gdunit4/setup-v1.json            success stamp of a reusable preparation
+  .godot/gdunit4/setup-in-progress.json   journal of a preparation that has not finished
+  .godot/gdunit4/<name>.<pid>.<guid>.tmp  atomic publication, discarded when abandoned
+  ```
+
+  Every editor preparation removes the stamp, journals its launch intent and
+  then the started editor's process id, start time and executable path. The
+  journal is removed only once that editor is verified gone. A later runner
+  that finds a journal waits for exactly that process up to
+  `CompileProcessTimeout`, never kills it, discards its output and prepares
+  again. A journal without a verifiable editor identity, an editor that
+  outlives the wait and an identity that can not be read fail the setup with a
+  remediation message instead of starting a second editor. The editor
+  preparation also observes cancellation and terminates its own process tree.
+  Test hosts of older packages use the former
+  `<LogFileRoot>/gdunit4-setup.lock` and must be stopped before these packages
+  are adopted (`960a8f7`).
+- `GDUNIT-RUNTIME-005` added the opt-in `ProjectSetupCache` setting (default
+  `false`; `<ProjectSetupCache>true</ProjectSetupCache>` under `<GdUnit4>`,
+  `dotnet test ... -- GdUnit4.ProjectSetupCache=false` for one run). When it is
+  enabled the runner still installs its generated runner first, then captures
+  a content fingerprint under the setup lock and skips the headless editor
+  pass when the stamp records exactly that state. Only the editor preparation
+  is reused: every runner starts its own Godot runtime with its current
+  environment, so coverage, profiler and debugger runs stay eligible, and no
+  runtime, discovery result or test result is ever shared.
+
+  The fingerprint is SHA-256 over ordinally sorted relative paths, file
+  lengths and file bytes; timestamps are never read. Inputs: `project.godot`,
+  the scanner-visible project tree (directories starting with a dot, holding
+  `.gdignore` or a nested `project.godot` are skipped), the Godot executable
+  with the other files of its directory and its `GodotSharp` tree, the gdUnit4 API and adapter
+  module identities, the preparation command, the generated runner and the
+  complete `.godot/mono/temp/bin/Debug` output. Outputs: `.godot/uid_cache.bin`,
+  `.godot/imported/**`, the `.import`/`.uid` sidecars with import results
+  written next to their source, and the presence and content of the global
+  class, scene group and extension list caches. Test assemblies outside the
+  scanned tree are not part of it; each fresh runtime loads them itself.
+
+  A stamp is published only after one successful editor pass whose inputs
+  equal the pre-setup capture in two captures taken after the editor is gone
+  and whose outputs are equal in both, so a fresh worktree publishes in its
+  first invocation. Nothing is published when the editor fails, times out, is
+  canceled, reports `Scan thread aborted` (its `--quit-after` budget ended
+  before the scan, still exit code 0), leaves a required output missing or
+  changes an input. Projects with enabled editor plugins, GDExtensions, a
+  non-hidden project data directory, linked directories in the scanned tree
+  or import metadata leaving the project are always prepared and never
+  stamped. Every `source_file` and `dest_files` path must be a plain
+  `res://a/b/c` path that still resolves to the same location below the
+  project root; drive-rooted (`res://C:/x`), drive-relative (`res://C:x`),
+  UNC, traversal, stream, backslash and otherwise malformed paths are rejected
+  before they reach the file system. Keep `LogFileRoot` outside the scanned
+  tree, for example below a `.gdignore` directory, otherwise every run changes
+  the fingerprint.
+
+  The runner logs the lock wait, the validation time, the miss reason, the
+  preparation time and the publication: `GdUnit4 project setup is up to date`,
+  `GdUnit4 project setup required: <reason>`,
+  `Published GdUnit4 project setup stamp` and
+  `GdUnit4 project setup stamp not published: <reason>`. Deleting
+  `setup-v1.json` is always safe and costs one preparation (`960a8f7`).
+- `GDUNIT-BUILD-003` added the `GdUnit4ApiTestHost` console project, the
+  editor stand-in and standalone setup owner the project setup tests start as
+  real processes. It is not packaged (`960a8f7`).
+- `GDUNIT-BUILD-004` removed two null suppressions in
+  `GodotRuntimeRequireAnalyzer` that current SDK analyzers report as
+  unnecessary, so the whole solution passes the warnings-as-errors build again
+  (`8b2cc79`).
+
+| Package | SHA-256 |
+| --- | --- |
+| `gdUnit4.api.5.0.0-outpostia.6.nupkg` | `3d492f14cf7b51810bc081e66a15ed46182cfe5524f5d25eb3c79bf267da3328` |
+| `gdUnit4.test.adapter.3.0.0-outpostia.6.nupkg` | `2544308b3cf64327b3be6b1633d12368a35a6e92197ac3cc7493ec2caba2fdbc` |
+
 ## Outpostia.5
 
 Date: 2026-09-28
