@@ -8,6 +8,44 @@ Base: gdUnit4Net `v5.0.0` (`39f836558cbfbd10e8038effb0ac6a4a71ca1629`)
 
 The API and adapter revisions are released together from the same source commit.
 
+## Outpostia.7
+
+Date: 2026-11-15
+
+Source: the commit that adds this entry, whose parent is `e88a718`
+
+Packages:
+
+- `gdUnit4.api` `5.0.0-outpostia.7`
+- `gdUnit4.test.adapter` `3.0.0-outpostia.7`
+
+Compatibility baseline: Godot `4.7.1-outpostia.2`
+
+- `GDUNIT-OPTIN-001` added `[OptIn("name")]` for a test or a suite, which may
+  be given more than once. A test runs only when every name of its own and of
+  its suite's attributes is listed, comma separated, in the `GDUNIT4_OPT_IN`
+  environment variable (case and surrounding white space ignored). Otherwise it
+  is reported as skipped with the reason
+  `needs opt-in <names> (GDUNIT4_OPT_IN)`, so tests that need a machine, a
+  service or an account stay out of routine runs without passing silently.
+  It reuses the `[IgnoreUntil]` skip path. Whether a test is skipped is decided
+  once, when its test case is created, and whether a suite runs its `[Before]`
+  and `[After]` stages once, before the first of them, so a variable changed
+  while the suite runs changes neither. A skipped test, also one skipped by
+  `[IgnoreUntil]`, runs no stage of its own, reads no `[DataPoint]` source and
+  builds no fuzzer, and is reported once; a suite none of whose tests run in
+  the current selection runs no `[Before]` or `[After]` stage.
+- `GDUNIT-ADAPTER-004` recorded the reason of a skipped test as the error
+  message of its skipped result, where IDEs and TRX show it, and sends each
+  distinct reason once per run as a warning message (`Skipped: <reason>`),
+  because the console logger of `dotnet test` shows only the names of skipped
+  tests and no informational message at its default verbosity.
+
+| Package | SHA-256 |
+| --- | --- |
+| `gdUnit4.api.5.0.0-outpostia.7.nupkg` | `d7f8bb065579bfef6b7cd42d4faf63ad5e883b0f30dbd35ca6128837c2752724` |
+| `gdUnit4.test.adapter.3.0.0-outpostia.7.nupkg` | `8f97e37edd533da7ad86af1481b0b3edc5039b835261678de491485f46a097b1` |
+
 ## Outpostia.6
 
 Date: 2026-10-01

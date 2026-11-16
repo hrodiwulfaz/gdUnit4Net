@@ -23,9 +23,13 @@ internal class AfterExecutionStage : ExecutionStage<AfterAttribute>
     public override async Task Execute(ExecutionContext context)
     {
         context.MemoryPool.SetActive(StageName);
-        await base
-            .Execute(context)
-            .ConfigureAwait(true);
+        if (!context.TestSuite.IsSkipped)
+        {
+            await base
+                .Execute(context)
+                .ConfigureAwait(true);
+        }
+
         Utils.ClearTempDir();
         await context.MemoryPool
             .Gc()

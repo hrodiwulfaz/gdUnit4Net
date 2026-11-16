@@ -15,9 +15,13 @@ internal class BeforeExecutionStage : ExecutionStage<BeforeAttribute>
     public override async Task Execute(ExecutionContext context)
     {
         context.MemoryPool.SetActive(StageName, true);
-        await base
-            .Execute(context)
-            .ConfigureAwait(true);
+        if (!context.TestSuite.IsSkipped)
+        {
+            await base
+                .Execute(context)
+                .ConfigureAwait(true);
+        }
+
         context.FireBeforeEvent();
         context.ReportCollector.Clear();
         context.MemoryPool.StopMonitoring();

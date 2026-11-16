@@ -51,7 +51,9 @@ internal sealed class TestSuiteExecutionStage : IExecutionStage
             foreach (var testCase in testSuiteContext.TestSuite.TestCases)
             {
                 using var testCaseContext = new ExecutionContext(testSuiteContext, testCase);
-                if (testCase.HasDataPoint)
+
+                // a skipped test runs once without its data, so a data point is never read and the skip is reported once
+                if (testCase.HasDataPoint && !testCase.IsSkipped)
                 {
                     await RunTestCaseWithDataPoint(stdoutHook, testCaseContext, testCase)
                         .ConfigureAwait(true);

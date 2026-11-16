@@ -20,6 +20,13 @@ internal sealed class TestCaseExecutionStage : ExecutionStage<TestCaseAttribute>
 
     public override async Task Execute(ExecutionContext context)
     {
+        if (context.IsSkipped)
+        {
+            if (context.CurrentTestCase?.SkipReason is { } reason)
+                context.ReportCollector.Consume(new TestReport(Skipped, context.CurrentTestCase.Line, reason));
+            return;
+        }
+
         context.MemoryPool.SetActive(StageName, true);
 
         await base

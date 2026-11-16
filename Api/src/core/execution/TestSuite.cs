@@ -11,6 +11,8 @@ internal sealed class TestSuite : IDisposable
 {
     private readonly Lazy<IEnumerable<TestCase>> testCases;
 
+    private readonly Lazy<bool> isSkipped;
+
     public TestSuite(TestSuiteNode suite)
         : this(
             FindTypeOnAssembly(suite.AssemblyPath, suite.ManagedType),
@@ -29,11 +31,18 @@ internal sealed class TestSuite : IDisposable
 
         // we do lazy loading to only load test case one times
         testCases = new Lazy<IEnumerable<TestCase>>(() => LoadTestCases(type, tests));
+        isSkipped = new Lazy<bool>(() => TestCases.Any() && TestCases.All(testCase => testCase.IsSkipped));
     }
 
     public int TestCaseCount => TestCases.Count();
 
     public IEnumerable<TestCase> TestCases => testCases.Value;
+
+    /// <summary>
+    ///     Gets a value indicating whether no test case of this run executes, so the suite stages do not run either.
+    ///     Decided once, at the first access, so the <see cref="BeforeAttribute" /> and <see cref="AfterAttribute" /> stages agree.
+    /// </summary>
+    public bool IsSkipped => isSkipped.Value;
 
     public string ResourcePath { get; set; }
 

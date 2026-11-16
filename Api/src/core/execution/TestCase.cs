@@ -14,7 +14,9 @@ internal sealed class TestCase
         Id = id;
         MethodInfo = methodInfo;
         Line = lineNumber;
-        Parameters = InitialParameters();
+        SkipReason = OptInFilter.SkipReason(methodInfo, System.Environment.GetEnvironmentVariable(OptInAttribute.ENVIRONMENT_VARIABLE));
+        IsSkipped = Attribute.IsDefined(methodInfo, typeof(IgnoreUntilAttribute)) || SkipReason != null;
+        Parameters = IsSkipped ? [] : InitialParameters();
         TestCaseAttribute = TestCaseAttributes[attributeIndex];
     }
 
@@ -31,9 +33,23 @@ internal sealed class TestCase
 
     public MethodInfo MethodInfo { get; set; }
 
+    /// <summary>
+    ///     Gets the arguments of one run of the test. A skipped test resolves no fuzzer, so its arguments are only those
+    ///     written in its <see cref="TestCaseAttribute" />.
+    /// </summary>
     public object?[] Arguments => IsParameterized ? TestCaseAttribute.Arguments : [.. Parameters.SelectMany(ResolveParam)];
 
-    public bool IsSkipped => Attribute.IsDefined(MethodInfo, typeof(IgnoreUntilAttribute));
+    /// <summary>
+    ///     Gets why the test does not run because of <see cref="OptInAttribute" />, or <see langword="null" /> when the run opted in to it.
+    ///     Decided once, when the test case is created.
+    /// </summary>
+    public string? SkipReason { get; }
+
+    /// <summary>
+    ///     Gets a value indicating whether the test is skipped by <see cref="IgnoreUntilAttribute" /> or <see cref="OptInAttribute" />.
+    ///     Decided once, when the test case is created, before any of its data is resolved.
+    /// </summary>
+    public bool IsSkipped { get; }
 
     public bool IsParameterized => TestCaseAttributes.Any(p => p.Arguments.Length > 0);
 

@@ -116,6 +116,69 @@ public class TestEventReportListenerTest
     }
 
     [TestMethod]
+    public void ASkippedTestCarriesItsReasonAsTheErrorMessage()
+    {
+        var testCase = CreateTestCase();
+        var framework = CreateFrameworkHandle(out var recordedResults, out var recordedEnds);
+
+        var listener = new TestEventReportListener(framework.Object, new[] { testCase });
+        listener.PublishEvent(new TestEventStub(EventType.TestBefore, testCase.Id));
+        listener.PublishEvent(new TestEventStub(EventType.TestAfter, testCase.Id)
+        {
+            IsSkipped = true,
+            Reports = new List<ITestReport> { new TestReportStub(ReportType.Skipped, "needs opt-in Network (GDUNIT4_OPT_IN)") }
+        });
+
+        Assert.AreEqual(1, recordedResults.Count);
+        Assert.AreEqual(TestOutcome.Skipped, recordedResults[0].Outcome);
+        Assert.AreEqual("needs opt-in Network (GDUNIT4_OPT_IN)", recordedResults[0].ErrorMessage);
+        Assert.AreEqual(1, recordedEnds.Count);
+        Assert.AreEqual(TestOutcome.Skipped, recordedEnds[0]);
+    }
+
+    [TestMethod]
+    public void EachSkipReasonIsSentOnceAsAWarning()
+    {
+        var testCases = CreateSuiteTestCases();
+        var framework = CreateFrameworkHandle(out var recordedResults, out _);
+        var warnings = new List<string>();
+        _ = framework
+            .Setup(handle => handle.SendMessage(TestMessageLevel.Warning, It.IsAny<string>()))
+            .Callback<TestMessageLevel, string>((_, message) => warnings.Add(message));
+
+        var listener = new TestEventReportListener(framework.Object, testCases);
+        var reasons = new[] { "needs opt-in Network (GDUNIT4_OPT_IN)", "needs opt-in Network (GDUNIT4_OPT_IN)", "needs opt-in Network, Accounts (GDUNIT4_OPT_IN)" };
+        for (var index = 0; index < testCases.Length; index++)
+        {
+            listener.PublishEvent(new TestEventStub(EventType.TestAfter, testCases[index].Id)
+            {
+                IsSkipped = true,
+                Reports = new List<ITestReport> { new TestReportStub(ReportType.Skipped, reasons[index]) }
+            });
+        }
+
+        Assert.AreEqual(3, recordedResults.Count);
+        CollectionAssert.AreEqual(
+            new[] { "Skipped: needs opt-in Network (GDUNIT4_OPT_IN)", "Skipped: needs opt-in Network, Accounts (GDUNIT4_OPT_IN)" },
+            warnings);
+    }
+
+    [TestMethod]
+    public void ASkippedTestWithoutAReasonHasNoErrorMessage()
+    {
+        var testCase = CreateTestCase();
+        var framework = CreateFrameworkHandle(out var recordedResults, out _);
+
+        var listener = new TestEventReportListener(framework.Object, new[] { testCase });
+        listener.PublishEvent(new TestEventStub(EventType.TestAfter, testCase.Id) { IsSkipped = true });
+
+        Assert.AreEqual(1, recordedResults.Count);
+        Assert.AreEqual(TestOutcome.Skipped, recordedResults[0].Outcome);
+        Assert.IsNull(recordedResults[0].ErrorMessage);
+        framework.Verify(handle => handle.SendMessage(TestMessageLevel.Warning, It.IsAny<string>()), Times.Never);
+    }
+
+    [TestMethod]
     public void AFrameworkCallbackFailurePropagatesUnchanged()
     {
         var testCase = CreateTestCase();

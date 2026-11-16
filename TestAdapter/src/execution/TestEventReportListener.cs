@@ -25,6 +25,8 @@ using TestCase = Microsoft.VisualStudio.TestPlatform.ObjectModel.TestCase;
 
 internal sealed class TestEventReportListener : ITestEventListener
 {
+    private readonly HashSet<string> reportedSkipReasons = new(StringComparer.Ordinal);
+
     public TestEventReportListener(IFrameworkHandle framework, IReadOnlyList<TestCase> testCases)
     {
         Framework = framework;
@@ -124,6 +126,29 @@ internal sealed class TestEventReportListener : ITestEventListener
         => testEvent.Reports.Any(report => report.IsError || report.IsFailure) ? TestOutcome.Failed : TestOutcome.Passed;
 
     /// <summary>
+    ///     Records why a test did not run as the error message of its skipped result, where every IDE and the TRX
+    ///     logger show the reason of a skipped test, and sends each distinct reason once as a warning message.
+    /// </summary>
+    /// <param name="report">The skipped report carrying the reason.</param>
+    /// <param name="testResult">The result of the skipped test.</param>
+    /// <returns>The same result.</returns>
+    /// <remarks>
+    ///     The console logger of <c>dotnet test</c> shows only the name of a skipped test and, at its default
+    ///     verbosity, no informational message, so the reason reaches the console as one warning line per reason.
+    /// </remarks>
+    private TestResult AddSkippedTestReport(ITestReport report, TestResult testResult)
+    {
+        var reason = report.Message.RichTextNormalize().TrimEnd();
+        if (reason.Length == 0)
+            return testResult;
+
+        testResult.ErrorMessage = reason;
+        if (reportedSkipReasons.Add(reason))
+            SendMessage(TestMessageLevel.Warning, $"Skipped: {reason}");
+        return testResult;
+    }
+
+    /// <summary>
     ///     Creates and finalizes the single terminal result of a completed test case.
     /// </summary>
     /// <param name="testEvent">The after test event supplying the outcome and the runtime reports.</param>
@@ -220,14 +245,16 @@ internal sealed class TestEventReportListener : ITestEventListener
 
 #pragma warning disable IDE0072
     private TestResult AddTestReport(ITestReport report, TestResult testResult)
-        => IdeDetector.Detect(Framework) switch
+        => report.Type == Skipped
+            ? AddSkippedTestReport(report, testResult)
+            : IdeDetector.Detect(Framework) switch
 #pragma warning restore IDE0072
-        {
-            Ide.JetBrainsRider => AddRiderTestReport(report, testResult),
-            Ide.VisualStudio => AddVisualStudio2022TestReport(report, testResult),
-            Ide.VisualStudioCode => AddVisualStudioCodeTestReport(report, testResult),
-            _ => AddDefaultTestReport(report, testResult)
-        };
+            {
+                Ide.JetBrainsRider => AddRiderTestReport(report, testResult),
+                Ide.VisualStudio => AddVisualStudio2022TestReport(report, testResult),
+                Ide.VisualStudioCode => AddVisualStudioCodeTestReport(report, testResult),
+                _ => AddDefaultTestReport(report, testResult)
+            };
 
     /// <summary>
     ///     Forwards a message to the test framework.
